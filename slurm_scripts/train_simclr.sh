@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --time=72:00:00
-#SBATCH --output=output/supcon/%j.txt
-#SBATCH --error=output/supcon/%j.txt
+#SBATCH --output=output/simclr/%j.txt
+#SBATCH --error=output/simclr/%j.txt
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
@@ -31,7 +31,6 @@ $ADD_CMDS
 scontrol show job "$SLURM_JOB_ID"
 echo $PATH
 
-
 DATASETS=("cifar10" "cifar100" "cifar10" "cifar100")
 MODELS=("resnet18" "resnet18" "resnet34" "resnet34")
 
@@ -40,13 +39,12 @@ echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID"
 DATASET=${DATASETS[$SLURM_ARRAY_TASK_ID]}
 MODEL=${MODELS[$SLURM_ARRAY_TASK_ID]}
 
-
 srun singularity exec -p --nv \
     --pwd /src/SupContrast \
     $SINGULARITY_COMMANDS \
     --bind $CUR_BASE_PATH:/src/SupContrast \
     $singularity_img_path \
-    /usr/bin/python3.10 -u /src/SupContrast/main_supcon.py \
+    /usr/bin/python3.10 -u /src/SupContrast/main_simclr.py \
         --batch_size 2048 \
         --learning_rate 0.5 \
         --temp 0.1 \
