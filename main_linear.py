@@ -107,6 +107,7 @@ def set_model(opt):
     classifier = LinearClassifier(name=opt.model, num_classes=opt.n_cls)
 
     ckpt = torch.load(opt.ckpt, map_location='cpu')
+    print(f"Loaded model from {opt.ckpt}")
     state_dict = ckpt['model']
 
     if torch.cuda.is_available():

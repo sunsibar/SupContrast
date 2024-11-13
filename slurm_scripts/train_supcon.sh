@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --time=72:00:00
-#SBATCH --output=output/supcon/%j.txt
-#SBATCH --error=output/supcon/%j.txt
+#SBATCH --output=output/supcon/%A_%a.txt
+#SBATCH --error=output/supcon/%A_%a.txt
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600

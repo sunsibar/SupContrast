@@ -4,8 +4,8 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
 #SBATCH --time=72:00:00
-#SBATCH --output=output/simclr/%j.txt
-#SBATCH --error=output/simclr/%j.txt
+#SBATCH --output=output/simclr/%A_%a.txt
+#SBATCH --error=output/simclr/%A_%a.txt
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
@@ -44,12 +44,13 @@ srun singularity exec -p --nv \
     $SINGULARITY_COMMANDS \
     --bind $CUR_BASE_PATH:/src/SupContrast \
     $singularity_img_path \
-    /usr/bin/python3.10 -u /src/SupContrast/main_simclr.py \
+    /usr/bin/python3.10 -u /src/SupContrast/main_supcon.py \
         --batch_size 2048 \
         --learning_rate 0.5 \
-        --temp 0.1 \
+        --temp 0.5 \
         --cosine \
         --dataset $DATASET \
         --num_workers 8 \
         --model $MODEL \
-        --epochs 500
+        --epochs 500 \
+        --method SimCLR 
