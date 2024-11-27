@@ -54,4 +54,4 @@ srun singularity exec -p --nv \
         --dataset $DATASET \
         --num_workers 8 \
         --model $MODEL \
-        --epochs 500
+        --epochs 1500

@@ -33,6 +33,7 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class, embe
         embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head)
     embeddings_path = os.path.join(embeddings_dir, embeddings_filename)
     embeddings_data = torch.load(embeddings_path)
+    print(f"Loaded embeddings from {embeddings_path}")
     embeddings = embeddings_data['embeddings']
     labels = embeddings_data['labels']  # Extract labels directly from the loaded dictionary
 
@@ -77,8 +78,8 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class, embe
     #                 marker=markers[i % 10],  # Marker based on label % 10
     #                 alpha=0.2, s=4, label=f'Label {i}' if i % 10 == 0 else "")  # Add label only for the first of each color
     # Create custom legend handles
-    legend_handles = [mlines.Line2D([], [], color=cmap(i*10), marker='o', linestyle='',
-                                  markersize=10, label=f'Label {i * 10 + 0}') 
+    legend_handles = [mlines.Line2D([], [], color=cmap(i), marker='o', linestyle='',
+                                  markersize=10, label=f'Label {i + 0}') 
         for i in range(10)  ]
  
     plt.legend(handles=legend_handles, title="Classes", bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -93,7 +94,7 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class, embe
 
     emb_dim = embeddings.shape[1]
     # Generate the plot filename using the utility function
-    tsne_filename = f'tSNE_{model_type}_{dataset_name}_dim-{emb_dim}_{model_architecture}_perplexity_{perplexity}_n_components_{n_components}_{"num_embeddings_" + str(num_embeddings_per_class) if num_embeddings_per_class != -1 else "all"}.png'
+    tsne_filename = f'tSNE_{model_type}_{dataset_name}_dim-{emb_dim}_{model_architecture}_perplexity_{perplexity}_n_components_{n_components}_{"num_embeddings_" + str(num_embeddings_per_class) if num_embeddings_per_class != -1 else "all"}{"_head" if head else ""}.png'
     plot_file = os.path.join(output_dir, tsne_filename)
     plt.savefig(plot_file)
     plt.close()

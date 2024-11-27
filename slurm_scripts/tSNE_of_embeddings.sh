@@ -37,11 +37,6 @@ DATASETS=("cifar10" "cifar10" "cifar100" "cifar100")
 MODEL="resnet34"  # Fixed model type
 NUM_EMBEDDINGS_PER_CLASS=-1  # Use entire dataset
 
-# Set checkpoint paths based on model type and dataset
-CKPT=("save/SupCon/${DATASETS[0]}_models/SupCon_${DATASETS[0]}_${MODEL}_lr_0.5_decay_0.0001_bsz_2048_temp_0.1_trial_0_cosine_warm/ckpt_epoch_500.pth" \
-      "save/SupCon/${DATASETS[1]}_models/SupCon_${DATASETS[1]}_${MODEL}_lr_0.5_decay_0.0001_bsz_2048_temp_0.1_trial_0_cosine_warm/ckpt_epoch_500.pth" \
-      "save/SupCon/${DATASETS[2]}_models/SupCon_${DATASETS[2]}_${MODEL}_lr_0.5_decay_0.0001_bsz_2048_temp_0.1_trial_0_cosine_warm/ckpt_epoch_500.pth" \
-      "save/SupCon/${DATASETS[3]}_models/SupCon_${DATASETS[3]}_${MODEL}_lr_0.5_decay_0.0001_bsz_2048_temp_0.1_trial_0_cosine_warm/ckpt_epoch_500.pth")
 
 # Get the current task index
 TASK_INDEX=$SLURM_ARRAY_TASK_ID
@@ -50,6 +45,21 @@ DATASET=${DATASETS[$TASK_INDEX]}
 CKPT_PATH=${CKPT[$TASK_INDEX]}
 HEAD="--head"
 # HEAD=" "
+
+
+LR=0.5
+TEMPERATURE=0.1
+if [[ $MODEL_TYPE == "SimCLR" ]]; then 
+    TEMPERATURE=0.5
+fi  
+
+
+# Set checkpoint paths based on model type and dataset
+CKPT=("save/SupCon/${DATASETS[0]}_models/${MODEL_TYPE}_${DATASETS[0]}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_500.pth" \
+      "save/SupCon/${DATASETS[1]}_models/${MODEL_TYPE}_${DATASETS[1]}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_500.pth" \
+      "save/SupCon/${DATASETS[2]}_models/${MODEL_TYPE}_${DATASETS[2]}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_500.pth" \
+      "save/SupCon/${DATASETS[3]}_models/${MODEL_TYPE}_${DATASETS[3]}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_500.pth")
+
 
 echo "SLURM_ARRAY_TASK_ID: $TASK_INDEX"
 echo "MODEL_TYPE: $MODEL_TYPE, MODEL: $MODEL, DATASET: $DATASET, CKPT: $CKPT_PATH, HEAD: $HEAD"
