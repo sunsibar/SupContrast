@@ -40,8 +40,9 @@ MODEL="resnet34"  # Fixed model type
 TASK_INDEX=$SLURM_ARRAY_TASK_ID
 MODEL_TYPE=${MODEL_TYPES[$TASK_INDEX]}
 DATASET=${DATASETS[$TASK_INDEX]}
-# HEAD="--head"
-HEAD=" "
+HEAD="--head"
+# HEAD=" "
+EPOCH=1500
 
 NUM_EMBEDDINGS_PER_CLASS=-1  # Use entire dataset
 
@@ -52,7 +53,7 @@ if [[ $MODEL_TYPE == "SimCLR" ]]; then
 fi  
 
 # Set checkpoint paths based on model type and dataset
-CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_500.pth" 
+CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
 
 
 echo "SLURM_ARRAY_TASK_ID: $TASK_INDEX"
@@ -84,5 +85,6 @@ srun singularity exec -p --nv \
         --dataset $DATASET \
         --num_embeddings_per_class 200 \
         --embeddings_dir ./embeddings \
+        --epoch $EPOCH \
         --output_dir ./analyses/plots/tSNE \
         $HEAD # Use the full model output

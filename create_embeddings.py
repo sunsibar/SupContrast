@@ -65,7 +65,10 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class, ckpt
 
     # Load the model
     model = SupConResNet(name=model_architecture).cuda()  # Adjust if using a different model class
-    state_dict = torch.load(ckpt, map_location='cpu')['model']
+    loaded_checkpoint = torch.load(ckpt, map_location="cpu")
+    state_dict = loaded_checkpoint['model']
+    epoch = loaded_checkpoint['epoch']
+    del loaded_checkpoint
     model.load_state_dict(state_dict)
     
     # Generate embeddings and labels
@@ -73,10 +76,10 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class, ckpt
 
     # Save embeddings
     os.makedirs(output_dir, exist_ok=True)
-    filename = generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head)
+    filename = generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head, epoch)
 
     # Save as a dictionary
-    torch.save({'embeddings': embeddings, 'labels': labels}, os.path.join(output_dir, filename))
+    torch.save({'embeddings': embeddings, 'labels': labels, 'epoch': epoch}, os.path.join(output_dir, filename))
     
     print(f"Embeddings saved to {output_dir}/{filename}")
 

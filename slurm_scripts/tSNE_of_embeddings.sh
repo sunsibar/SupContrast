@@ -76,5 +76,6 @@ srun singularity exec -p --nv \
         --dataset $DATASET \
         --embeddings_dir ./embeddings \
         --num_embeddings_per_class 200 \
+        --epoch 1500 \
         --output_dir ./analyses/plots/tSNE \
         $HEAD # Use the full model output

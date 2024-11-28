@@ -23,6 +23,10 @@ except ImportError:
     pass
 
 
+def get_model_file(opt, epoch):
+    return os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch)) 
+
+
 def parse_option():
     parser = argparse.ArgumentParser('argument for training')
 
@@ -36,6 +40,10 @@ def parse_option():
                         help='num of workers to use')
     parser.add_argument('--epochs', type=int, default=500,
                         help='number of training epochs')
+    parser.add_argument('--reload_from_epoch', type=int, default=0,
+                        help='epoch to reload from')
+    parser.add_argument('--ckpt', type=str, default=None,
+                        help='path to checkpoint to reload from')
 
     # optimization
     parser.add_argument('--learning_rate', type=float, default=0.2,
@@ -182,7 +190,19 @@ def set_model(opt):
         criterion = criterion.cuda()
         cudnn.benchmark = True
 
-    return model, criterion
+    if opt.reload_from_epoch > 0:
+        if opt.ckpt is not None:    
+            checkpoint = torch.load(opt.ckpt, map_location='cpu')
+        else:
+            checkpoint = torch.load(get_model_file(opt, opt.reload_from_epoch), map_location='cpu')
+        assert int(checkpoint['epoch']) == opt.reload_from_epoch
+        model.load_state_dict(checkpoint['model'])
+        start_epoch = int(checkpoint['epoch'])
+        print(f"Loading model weights from checkpoint: {get_model_file(opt, opt.reload_from_epoch)}")
+    else:
+        start_epoch = 0
+
+    return model, criterion, start_epoch
 
 
 def train(train_loader, model, criterion, optimizer, epoch, opt):
@@ -285,7 +305,7 @@ def main():
     train_loader, val_loader = set_loader(opt)
 
     # build model and criterion
-    model, criterion = set_model(opt)
+    model, criterion, start_epoch = set_model(opt)
 
     # build optimizer
     optimizer = set_optimizer(opt, model)
@@ -299,32 +319,33 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        loss, train_acc = train(train_loader, model, criterion, optimizer, epoch, opt)
+        loss, train_acc = train(train_loader, model, criterion, optimizer, epoch + start_epoch, opt)
         time2 = time.time()
-        print('epoch {}, total time {:.2f}'.format(epoch, time2 - time1))
+        print('epoch {}, total time {:.2f}'.format(epoch + start_epoch, time2 - time1))
 
         # tensorboard logger
-        logger.log_value('train_loss', loss, epoch)
-        logger.log_value('train_acc', train_acc, epoch)
-        logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch)
+        logger.log_value('train_loss', loss, epoch + start_epoch)
+        logger.log_value('train_acc', train_acc, epoch + start_epoch)
+        logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch + start_epoch)
 
         # evaluation
         loss, val_acc = validate(val_loader, model, criterion, opt)
-        logger.log_value('val_loss', loss, epoch)
-        logger.log_value('val_acc', val_acc, epoch)
+        logger.log_value('val_loss', loss, epoch + start_epoch)
+        logger.log_value('val_acc', val_acc, epoch + start_epoch)
 
         if val_acc > best_acc:
             best_acc = val_acc
 
         if epoch % opt.save_freq == 0:
-            save_file = os.path.join(
-                opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
-            save_model(model, optimizer, opt, epoch, save_file)
+            # save_file = os.path.join(
+            #     opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch + start_epoch))
+            save_file = get_model_file(opt, epoch + start_epoch)
+            save_model(model, optimizer, opt, epoch + start_epoch, save_file)
 
     # save the last model
     save_file = os.path.join(
         opt.save_folder, 'last.pth')
-    save_model(model, optimizer, opt, opt.epochs, save_file)
+    save_model(model, optimizer, opt, opt.epochs + start_epoch, save_file)
 
     print('best accuracy: {:.2f}'.format(best_acc))
 

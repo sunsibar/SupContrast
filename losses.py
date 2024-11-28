@@ -104,3 +104,53 @@ class SupConLoss(nn.Module):
         loss = loss.view(anchor_count, batch_size).mean()
 
         return loss
+
+
+
+
+class TargetVectorMSELoss(nn.Module):
+    """MSE Loss between embeddings and target vectors assigned to each class.
+       Vectors are initialized as random uniform points on the unit hypersphere.
+    For each class i, samples of that class should be mapped to the i-th target vector."""
+    def __init__(self, num_classes, embedding_dim=128):
+        super(TargetVectorMSELoss, self).__init__()
+        self.num_classes = num_classes
+        
+        # Initialize target vectors using the uniform points method
+        from utils.uniform_points import initialize_uniform_points
+        target_vectors, _ = initialize_uniform_points(num_classes, embedding_dim)
+        self.register_buffer('target_vectors', torch.from_numpy(target_vectors).float())
+
+    def forward(self, features, labels=None):
+        """Compute MSE loss between features and their target vectors.
+        
+        Args:
+            features: hidden vector of shape [bsz, n_views, ...].
+            labels: ground truth of shape [bsz].
+        Returns:
+            A loss scalar.
+        """
+        if labels is None:
+            raise ValueError('Labels must be provided for TargetVectorMSELoss')
+            
+        if len(features.shape) < 3:
+            raise ValueError('`features` needs to be [bsz, n_views, ...],'
+                           'at least 3 dimensions are required')
+                           
+        # Get batch size and number of views
+        batch_size = features.shape[0]
+        n_views = features.shape[1]
+        
+        # Reshape features to [bsz * n_views, ...]
+        features = features.view(-1, features.shape[-1])
+        
+        # Repeat labels for each view
+        labels_expanded = labels.repeat_interleave(n_views)
+        
+        # Get target vectors for each sample based on their labels
+        targets = self.target_vectors[labels_expanded]
+        
+        # Compute MSE loss
+        loss = torch.mean((features - targets) ** 2)
+        
+        return loss

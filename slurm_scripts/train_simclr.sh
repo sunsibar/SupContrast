@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
-#SBATCH --array=0-3
+#SBATCH --array=3-3
 
 # Load configuration
 source slurm_scripts/config.sh
@@ -38,6 +38,12 @@ echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID"
 
 DATASET=${DATASETS[$SLURM_ARRAY_TASK_ID]}
 MODEL=${MODELS[$SLURM_ARRAY_TASK_ID]}
+MODEL_TYPE="SimCLR"
+LR_RELOAD=0.5
+TEMPERATURE=0.5
+EPOCH=1500
+CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR_RELOAD}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
+
 
 srun singularity exec -p --nv \
     --pwd /src/SupContrast \
@@ -46,11 +52,14 @@ srun singularity exec -p --nv \
     $singularity_img_path \
     /usr/bin/python3.10 -u /src/SupContrast/main_supcon.py \
         --batch_size 2048 \
-        --learning_rate 0.5 \
-        --temp 0.5 \
+        --learning_rate 3.0 \
+        --temp $TEMPERATURE \
         --cosine \
         --dataset $DATASET \
         --num_workers 8 \
         --model $MODEL \
         --epochs 1500 \
-        --method SimCLR 
+        --reload_from_epoch 1500 \
+        --ckpt $CKPT \
+        --method SimCLR \
+        --trial 0
