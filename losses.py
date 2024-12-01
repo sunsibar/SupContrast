@@ -1,12 +1,14 @@
 """
 Author: Yonglong Tian (yonglong@mit.edu)
 Date: May 07, 2020
+Modified (Added TargetVectorMSELoss): 2024-11-28
 """
 from __future__ import print_function
 
 import torch
 import torch.nn as nn
 
+from utils.uniform_points import random_uniform_points
 
 class SupConLoss(nn.Module):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
@@ -117,8 +119,7 @@ class TargetVectorMSELoss(nn.Module):
         self.num_classes = num_classes
         
         # Initialize target vectors using the uniform points method
-        from utils.uniform_points import initialize_uniform_points
-        target_vectors, _ = initialize_uniform_points(num_classes, embedding_dim)
+        target_vectors = random_uniform_points(num_classes, embedding_dim)
         self.register_buffer('target_vectors', torch.from_numpy(target_vectors).float())
 
     def forward(self, features, labels=None):

@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
-#SBATCH --array=0-3  # Adjusted for 4 combinations
+#SBATCH --array=0-1   
 
 # Load configuration
 source slurm_scripts/config.sh
@@ -32,8 +32,8 @@ scontrol show job "$SLURM_JOB_ID"
 echo $PATH
 
 # Define model types, datasets, and other parameters
-MODEL_TYPES=("SupCon" "SimCLR" "SupCon" "SimCLR")
-DATASETS=("cifar10" "cifar10" "cifar100" "cifar100")
+MODEL_TYPES=("TargetVector" "TargetVector" "SupCon" "SimCLR" "SupCon" "SimCLR")
+DATASETS=("cifar100" "cifar10" "cifar10" "cifar10" "cifar100" "cifar100")
 MODEL="resnet34"  # Fixed model type
 
 # Get the current task index
@@ -87,4 +87,20 @@ srun singularity exec -p --nv \
         --embeddings_dir ./embeddings \
         --epoch $EPOCH \
         --output_dir ./analyses/plots/tSNE \
+        $HEAD # Use the full model output
+
+# SVD
+srun singularity exec -p --nv \
+    --pwd /src/SupContrast \
+    $SINGULARITY_COMMANDS \
+    --bind $CUR_BASE_PATH:/src/SupContrast \
+    $singularity_img_path \
+    /usr/bin/python3.10 -u /src/SupContrast/analyses/singular_value_spectrum_of_embeddings.py \
+        --model_type $MODEL_TYPE \
+        --model_architecture $MODEL \
+        --dataset $DATASET \
+        --num_embeddings_per_class -1 \
+        --embeddings_dir ./embeddings \
+        --epoch $EPOCH \
+        --output_dir ./analyses/plots/spectra \
         $HEAD # Use the full model output

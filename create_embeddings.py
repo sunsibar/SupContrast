@@ -49,7 +49,7 @@ def generate_embeddings(model, dataloader, use_head):
 
 
 @click.command()
-@click.option('--model_type', type=click.Choice(['SimCLR', 'SupCon'], case_sensitive=False), required=True, help='Type of model to use.')
+@click.option('--model_type', type=click.Choice(['SimCLR', 'SupCon', 'TargetVector'], case_sensitive=False), required=True, help='Type of model to use.')
 @click.option('--model_architecture', type=click.Choice(['resnet18', 'resnet34', 'resnet50'], case_sensitive=False), required=True, help='Model architecture to use.')
 @click.option('--dataset', type=click.Choice(['cifar10', 'cifar100'], case_sensitive=False), required=True, help='Dataset to use.')
 @click.option('--num_embeddings_per_class', type=int, default=-1, help='Number of embeddings to generate per class. Use None to use the entire dataset.')
