@@ -246,18 +246,23 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        loss, acc = train(train_loader, model, classifier, criterion,
+        train_loss, train_acc = train(train_loader, model, classifier, criterion,
                           optimizer, epoch, opt)
         time2 = time.time()
         print('Train epoch {}, total time {:.2f}, accuracy:{:.2f}'.format(
-            epoch, time2 - time1, acc))
+            epoch, time2 - time1, train_acc))
 
         # eval for one epoch
-        loss, val_acc = validate(val_loader, model, classifier, criterion, opt)
+        val_loss, val_acc = validate(val_loader, model, classifier, criterion, opt)
         if val_acc > best_acc:
             best_acc = val_acc
+            
+        time2 = time.time()
+        print('epoch {}, total time {:.2f}, train_acc:{:.2f}, val_acc:{:.2f}'.format(
+            epoch, time2 - time1, train_acc, val_acc))
 
-    print('best accuracy: {:.2f}'.format(best_acc))
+  
+    print('best (val) accuracy: {:.2f}'.format(best_acc))
 
 
 if __name__ == '__main__':

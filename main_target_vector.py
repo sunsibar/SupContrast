@@ -15,7 +15,7 @@ from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
 from networks.resnet_big import SupConResNet
-from losses import SupConLoss
+from losses import TargetVectorMSELoss, SupConLoss
 
 try:
     import apex
@@ -65,8 +65,8 @@ def parse_option():
     parser.add_argument('--size', type=int, default=32, help='parameter for RandomResizedCrop')
 
     # method
-    parser.add_argument('--method', type=str, default='SupCon',
-                        choices=['SupCon', 'SimCLR'], help='choose method')
+    parser.add_argument('--method', type=str, default='TargetVector',
+                        choices=['SupCon', 'SimCLR', 'TargetVector'], help='choose method')
 
     # temperature
     parser.add_argument('--temp', type=float, default=0.07,
@@ -137,7 +137,7 @@ def get_model_file(opt, epoch):
     return os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
 
 
-def set_loader(opt):
+def set_loader(opt, is_train=True):
     # construct data loader
     if opt.dataset == 'cifar10':
         mean = (0.4914, 0.4822, 0.4465)
@@ -185,9 +185,13 @@ def set_loader(opt):
     return train_loader
 
 
-def set_model(opt):
+def set_model(opt, num_classes):   
     model = SupConResNet(name=opt.model)
-    criterion = SupConLoss(temperature=opt.temp)
+    # assert opt.method == 'TargetVector'
+    if opt.method == 'TargetVector':
+        criterion = TargetVectorMSELoss(num_classes=num_classes) 
+    else: # for both SupCon and SimCLR
+        criterion = SupConLoss(num_classes=num_classes) 
 
     # enable synchronized Batch Normalization
     if opt.syncBN:
@@ -240,7 +244,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         features = model(images)
         f1, f2 = torch.split(features, [bsz, bsz], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
-        if opt.method == 'SupCon':
+        if opt.method in ['SupCon', 'TargetVector']:
             loss = criterion(features, labels)
         elif opt.method == 'SimCLR':
             loss = criterion(features)
@@ -322,7 +326,7 @@ def main():
     val_loader = set_loader(opt, is_train=False)
 
     # build model and criterion
-    model, criterion, start_epoch = set_model(opt)
+    model, criterion, start_epoch = set_model(opt, len(train_loader.dataset.classes))
 
     # build optimizer
     optimizer = set_optimizer(opt, model)
