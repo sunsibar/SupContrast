@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
-#SBATCH --array=5-5   
+#SBATCH --array=2-3  
 
 # Load configuration
 source slurm_scripts/config.sh
@@ -32,9 +32,11 @@ scontrol show job "$SLURM_JOB_ID"
 echo $PATH
 
 # Define model types, datasets, and other parameters
-MODEL_TYPES=("TargetVector" "TargetVector" "SupCon" "SimCLR" "SupCon" "SimCLR")
-DATASETS=("cifar100" "cifar10" "cifar10" "cifar10" "cifar100" "cifar100")
+MODEL_TYPES=("SupCon" "SimCLR" "SupCon" "SimCLR")
+DATASETS=("cifar10" "cifar10" "cifar100" "cifar100")
 MODEL="resnet34"  # Fixed model type
+NUM_EMBEDDINGS_PER_CLASS=-1  # Use entire dataset
+
 
 # Get the current task index
 TASK_INDEX=$SLURM_ARRAY_TASK_ID
@@ -44,55 +46,21 @@ HEAD="--head"
 # HEAD=" "
 EPOCH=3000
 
-NUM_EMBEDDINGS_PER_CLASS=-1  # Use entire dataset
-
-# LR=0.5
 LR=0.2
-# LR=0.05
-# LR=0.0002
 TEMPERATURE=0.1
 if [[ $MODEL_TYPE == "SimCLR" ]]; then 
     TEMPERATURE=0.5
 fi  
 
+
 # Set checkpoint paths based on model type and dataset
-CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
+CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASETS[0]}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth"
 
 
 echo "SLURM_ARRAY_TASK_ID: $TASK_INDEX"
 echo "MODEL_TYPE: $MODEL_TYPE, MODEL: $MODEL, DATASET: $DATASET, CKPT: $CKPT, HEAD: $HEAD"
 
-srun singularity exec -p --nv \
-    --pwd /src/SupContrast \
-    $SINGULARITY_COMMANDS \
-    --bind $CUR_BASE_PATH:/src/SupContrast \
-    $singularity_img_path \
-    /usr/bin/python3.10 -u /src/SupContrast/create_embeddings.py \
-        --model_type $MODEL_TYPE \
-        --model_architecture $MODEL \
-        --dataset $DATASET \
-        --num_embeddings_per_class $NUM_EMBEDDINGS_PER_CLASS \
-        --ckpt $CKPT \
-        --output_dir ./embeddings \
-        $HEAD # Use the full model output
-
-# Directly create t-SNE plots
-srun singularity exec -p --nv \
-    --pwd /src/SupContrast \
-    $SINGULARITY_COMMANDS \
-    --bind $CUR_BASE_PATH:/src/SupContrast \
-    $singularity_img_path \
-    /usr/bin/python3.10 -u /src/SupContrast/analyses/tSNE_of_embeddings.py \
-        --model_type $MODEL_TYPE \
-        --model_architecture $MODEL \
-        --dataset $DATASET \
-        --num_embeddings_per_class 200 \
-        --embeddings_dir ./embeddings \
-        --epoch $EPOCH \
-        --output_dir ./analyses/plots/tSNE \
-        $HEAD # Use the full model output
-
-# SVD
+ 
 srun singularity exec -p --nv \
     --pwd /src/SupContrast \
     $SINGULARITY_COMMANDS \
@@ -102,8 +70,24 @@ srun singularity exec -p --nv \
         --model_type $MODEL_TYPE \
         --model_architecture $MODEL \
         --dataset $DATASET \
-        --num_embeddings_per_class -1 \
         --embeddings_dir ./embeddings \
+        --num_embeddings_per_class -1 \
         --epoch $EPOCH \
         --output_dir ./analyses/plots/spectra \
         $HEAD # Use the full model output
+ 
+srun singularity exec -p --nv \
+    --pwd /src/SupContrast \
+    $SINGULARITY_COMMANDS \
+    --bind $CUR_BASE_PATH:/src/SupContrast \
+    $singularity_img_path \
+    /usr/bin/python3.10 -u /src/SupContrast/analyses/tSNE_of_embeddings.py \
+        --model_type $MODEL_TYPE \
+        --model_architecture $MODEL \
+        --dataset $DATASET \
+        --embeddings_dir ./embeddings \
+        --num_embeddings_per_class 200 \
+        --epoch $EPOCH \
+        --output_dir ./analyses/plots/tSNE \
+        $HEAD # Use the full model output
+
