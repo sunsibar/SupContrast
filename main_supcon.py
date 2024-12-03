@@ -137,7 +137,7 @@ def get_model_file(opt, epoch):
     return os.path.join(opt.save_folder, 'ckpt_epoch_{epoch}.pth'.format(epoch=epoch))
 
 
-def set_loader(opt):
+def set_loader(opt, is_train=True):
     # construct data loader
     if opt.dataset == 'cifar10':
         mean = (0.4914, 0.4822, 0.4465)
@@ -152,37 +152,44 @@ def set_loader(opt):
         raise ValueError('dataset not supported: {}'.format(opt.dataset))
     normalize = transforms.Normalize(mean=mean, std=std)
 
-    train_transform = transforms.Compose([
-        transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
-        transforms.RandomHorizontalFlip(),
-        transforms.RandomApply([
-            transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
-        ], p=0.8),
-        transforms.RandomGrayscale(p=0.2),
-        transforms.ToTensor(),
-        normalize,
-    ])
+
+    transform = transforms.Compose([
+            transforms.RandomResizedCrop(size=opt.size, scale=(0.2, 1.)),
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomApply([
+                transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)
+            ], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.ToTensor(),
+            normalize,
+        ]) 
 
     if opt.dataset == 'cifar10':
-        train_dataset = datasets.CIFAR10(root=opt.data_folder,
-                                         transform=TwoCropTransform(train_transform),
-                                         download=True)
+        dataset = datasets.CIFAR10(
+            root=opt.data_folder,
+            train=is_train,
+            transform=TwoCropTransform(transform),  # Always use TwoCropTransform
+            download=True)
     elif opt.dataset == 'cifar100':
-        train_dataset = datasets.CIFAR100(root=opt.data_folder,
-                                          transform=TwoCropTransform(train_transform),
-                                          download=True)
+        dataset = datasets.CIFAR100(
+            root=opt.data_folder,
+            train=is_train,
+            transform=TwoCropTransform(transform),
+            download=True)
     elif opt.dataset == 'path':
-        train_dataset = datasets.ImageFolder(root=opt.data_folder,
-                                            transform=TwoCropTransform(train_transform))
+        dataset = datasets.ImageFolder(
+            root=opt.data_folder,
+            transform=TwoCropTransform(transform) )
+        assert is_train, "Validation set not supported for path dataset"
     else:
         raise ValueError(opt.dataset)
 
-    train_sampler = None
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=opt.batch_size, shuffle=(train_sampler is None),
-        num_workers=opt.num_workers, pin_memory=True, sampler=train_sampler)
+    sampler = None
+    loader = torch.utils.data.DataLoader(
+        dataset, batch_size=opt.batch_size, shuffle=(sampler is None and is_train),
+        num_workers=opt.num_workers, pin_memory=True, sampler=sampler)
 
-    return train_loader
+    return loader
 
 
 def set_model(opt):
@@ -318,7 +325,7 @@ def main():
     opt = parse_option()
 
     # build data loader
-    train_loader = set_loader(opt)
+    train_loader = set_loader(opt, is_train=True)
     val_loader = set_loader(opt, is_train=False)
 
     # build model and criterion
