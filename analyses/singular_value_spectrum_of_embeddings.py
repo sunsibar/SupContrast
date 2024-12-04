@@ -75,10 +75,11 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
             subset_embeddings = subset_embeddings / torch.norm(subset_embeddings, dim=1, keepdim=True)
 
     eigenvectors, eigenvalues = pca(subset_embeddings)
-    if dataset_name == 'cifar10':
-        eigenvalues = eigenvalues[:10]
-    elif dataset_name == 'cifar100':
-        eigenvalues = eigenvalues[:100]
+    # if model_type != "SimCLR":
+    #     if dataset_name == 'cifar10':
+    #         eigenvalues = eigenvalues[:10]
+    #     elif dataset_name == 'cifar100':
+    #         eigenvalues = eigenvalues[:100]
 
     os.makedirs(output_dir, exist_ok=True)
     emb_dim = embeddings.shape[1]
