@@ -41,8 +41,20 @@ MODEL=${MODELS[$SLURM_ARRAY_TASK_ID]}
 MODEL_TYPE="SimCLR"
 # LR_RELOAD=0.5
 TEMPERATURE=0.5
+LR=0
+NORM="rmsnorm2d"
+TRIAL="rmsnorm2d"
+# LR=0.5
 # EPOCH=1500
 # CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR_RELOAD}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
+
+echo "DATASET: $DATASET"
+echo "MODEL: $MODEL"
+echo "LR: $LR"
+echo "TEMPERATURE: $TEMPERATURE"
+echo "MODEL_TYPE: $MODEL_TYPE"
+echo "NORM: $NORM"
+echo "TRIAL: $TRIAL"
 
 
 srun singularity exec -p --nv \
@@ -51,13 +63,14 @@ srun singularity exec -p --nv \
     --bind $CUR_BASE_PATH:/src/SupContrast \
     $singularity_img_path \
     /usr/bin/python3.10 -u /src/SupContrast/main_supcon.py \
-        --batch_size 2048 \
-        --learning_rate 0.5 \
+        --batch_size 1024 \
+        --learning_rate $LR \
         --temp $TEMPERATURE \
         --cosine \
         --dataset $DATASET \
         --num_workers 8 \
         --model $MODEL \
-        --epochs 2000 \
+        --epochs 1 \
         --method SimCLR \
-        --trial 0
+        --trial $TRIAL \
+        --norm $NORM

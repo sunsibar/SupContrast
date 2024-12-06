@@ -42,25 +42,43 @@ MODEL_TYPE=${MODEL_TYPES[$TASK_INDEX]}
 DATASET=${DATASETS[$TASK_INDEX]}
 HEAD="--head"
 # HEAD=" "
-EPOCH=10500
+EPOCH=0
+# EPOCH_NAME=" " # "last"  # "last"
+EPOCH_NAME="last"  # "last"
+# TRIAL="0" 
+TRIAL="rmsnorm2d" # "0" # "zero"
+# NORM="rmsnorm2d"
+# NORM="batchnorm2d"
+NORM="rmsnorm2d"
 
 NUM_EMBEDDINGS_PER_CLASS=-1  # Use entire dataset
 
 # LR=0.5
 # LR=0.2
-LR=0.005
+LR=0.0
+# LR=0.005
 # LR=0.0002
 TEMPERATURE=0.1
 if [[ $MODEL_TYPE == "SimCLR" ]]; then 
     TEMPERATURE=0.5
 fi  
 
+if [[ $EPOCH_NAME == "last" ]]; then
+    EPOCH_STR="last.pth"
+else
+    EPOCH_STR="ckpt_epoch_${EPOCH}.pth"
+fi
+
 # Set checkpoint paths based on model type and dataset
-CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
+# CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_${TRIAL}_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
+CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_${TRIAL}_cosine_warm/${EPOCH_STR}" 
 
 
 echo "SLURM_ARRAY_TASK_ID: $TASK_INDEX"
-echo "MODEL_TYPE: $MODEL_TYPE, MODEL: $MODEL, DATASET: $DATASET, CKPT: $CKPT, HEAD: $HEAD"
+echo "MODEL_TYPE: $MODEL_TYPE, MODEL: $MODEL, DATASET: $DATASET"
+echo "CKPT: $CKPT"
+echo "HEAD: $HEAD"
+echo "NORM: $NORM"
 
 srun singularity exec -p --nv \
     --pwd /src/SupContrast \
@@ -74,6 +92,7 @@ srun singularity exec -p --nv \
         --num_embeddings_per_class $NUM_EMBEDDINGS_PER_CLASS \
         --ckpt $CKPT \
         --output_dir ./embeddings \
+        --norm $NORM \
         $HEAD # Use the full model output
 
 # Directly create t-SNE plots
