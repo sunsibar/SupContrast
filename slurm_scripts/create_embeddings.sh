@@ -42,7 +42,7 @@ MODEL_TYPE=${MODEL_TYPES[$TASK_INDEX]}
 DATASET=${DATASETS[$TASK_INDEX]}
 HEAD="--head"
 # HEAD=" "
-EPOCH=0
+EPOCH=1
 # EPOCH_NAME=" " # "last"  # "last"
 EPOCH_NAME="last"  # "last"
 # TRIAL="0" 
@@ -50,6 +50,8 @@ TRIAL="rmsnorm2d" # "0" # "zero"
 # NORM="rmsnorm2d"
 # NORM="batchnorm2d"
 NORM="rmsnorm2d"
+# BATCH_SIZE=2048
+BATCH_SIZE=1024
 
 NUM_EMBEDDINGS_PER_CLASS=-1  # Use entire dataset
 
@@ -71,7 +73,7 @@ fi
 
 # Set checkpoint paths based on model type and dataset
 # CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_${TRIAL}_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
-CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_${TRIAL}_cosine_warm/${EPOCH_STR}" 
+CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_${BATCH_SIZE}_temp_${TEMPERATURE}_trial_${TRIAL}_cosine_warm/${EPOCH_STR}" 
 
 
 echo "SLURM_ARRAY_TASK_ID: $TASK_INDEX"
@@ -124,5 +126,6 @@ srun singularity exec -p --nv \
         --num_embeddings_per_class -1 \
         --embeddings_dir ./embeddings \
         --epoch $EPOCH \
+        --trial $TRIAL \
         --output_dir ./analyses/plots/spectra \
         $HEAD # Use the full model output

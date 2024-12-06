@@ -31,16 +31,17 @@ from utils.uniform_points import random_uniform_points
 @click.option('--head', is_flag=True, help='Use the head of the model.')
 @click.option('--epoch', type=int, default=1500, help='Epoch number of the pre-trained model checkpoint.')
 @click.option('--normalize', is_flag=True, help='Normalize the embeddings.')
+@click.option('--trial', type=str, default="0", help='Trial (Run identifier in a way)')
 
 def main(model_type, model_architecture, dataset, num_embeddings_per_class, 
          embeddings_dir, output_dir,
-         perplexity, n_components, head, epoch, normalize):
+         perplexity, n_components, head, epoch, normalize, trial):
     # Load embeddings and labels
     dataset_name = dataset
     try:
-        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, -1, head, epoch)
+        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, -1, head, epoch, trial)
     except FileNotFoundError:
-        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head)
+        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head, epoch, trial)
     embeddings_path = os.path.join(embeddings_dir, embeddings_filename)
     embeddings_data = torch.load(embeddings_path)
     print(f"Loaded embeddings from {embeddings_path}")

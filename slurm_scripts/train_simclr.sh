@@ -41,11 +41,11 @@ MODEL=${MODELS[$SLURM_ARRAY_TASK_ID]}
 MODEL_TYPE="SimCLR"
 # LR_RELOAD=0.5
 TEMPERATURE=0.5
-LR=0
+# LR=0
 NORM="rmsnorm2d"
 TRIAL="rmsnorm2d"
-# LR=0.5
-# EPOCH=1500
+LR=0.5
+
 # CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR_RELOAD}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
 
 echo "DATASET: $DATASET"
@@ -70,7 +70,7 @@ srun singularity exec -p --nv \
         --dataset $DATASET \
         --num_workers 8 \
         --model $MODEL \
-        --epochs 1 \
+        --epochs 1500 \
         --method SimCLR \
         --trial $TRIAL \
         --norm $NORM

@@ -98,7 +98,7 @@ def save_model(model, optimizer, opt, epoch, save_file):
 
 # utils.py
 
-def generate_embeddings_filename(model_type, dataset, model, num_embeddings_per_class, head=False, epoch=None):
+def generate_embeddings_filename(model_type, dataset, model, num_embeddings_per_class, head=False, epoch=None, trial="0"):
     """Generate a filename for embeddings based on parameters."""
-    return f'embeddings_{model_type}_{dataset}_{model}_{"num_embeddings_" + str(num_embeddings_per_class) if num_embeddings_per_class != -1 else "all"}{"_head" if head else ""}_ep-{epoch}.pt'
+    return f'embeddings_{model_type}_{dataset}_{model}_{"num_embeddings_" + str(num_embeddings_per_class) if num_embeddings_per_class != -1 else "all"}{"_head" if head else ""}_ep-{epoch}_trial-{trial}.pt'
 
