@@ -93,8 +93,8 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
 
 
     # Create a figure with two subplots
-    fig, axs = plt.subplots(1, 3, figsize=(14, 5))
-
+    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+    axs = axs.flatten()
     # Plot eigenvalues
     # sns.set_style("whitegrid")
     sns.set_context("paper", font_scale=1.2)
@@ -102,17 +102,24 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
     x = np.arange(len(eigenvalues))
 
     # Create scatter plot for eigenvalues
-    axs[0].scatter(x, eigenvalues, label='Eigenvalues/Singular values')#, basefmt=' ')
+    axs[0].scatter(x, eigenvalues, label='Eigenvalues')#, basefmt=' ')
     axs[0].set_xlabel('Index')
     axs[0].set_ylabel('Eigenvalue')
-    axs[0].set_title(f'Eigenvalues of {model_type} ({model_architecture}) {dataset_name} embeddings', pad=20, fontsize=14)
+    axs[0].set_title(f'Eigenvalues of {model_type}\n({model_architecture}) {dataset_name} embeddings', pad=20, fontsize=14)
+    # Logscale
+    axs[1].scatter(x, eigenvalues, label='Eigenvalues (log scale)')#, basefmt=' ')
+    axs[1].set_xlabel('Index')
+    axs[1].set_ylabel('Eigenvalue (log scale)')
+    axs[1].set_title(f'Eigenvalues of {model_type}\n({model_architecture}) {dataset_name} embeddings', pad=20, fontsize=14)
 
     # Set y-axis to log scale if needed
     # Uncomment the next line if you want to use log scale
-    # axs[0].set_yscale('log')
+    axs[1].set_yscale('log')
+    axs[1].grid(True)
 
     # Add legend
     axs[0].legend(frameon=True, fancybox=True, framealpha=0.9, loc='upper right', bbox_to_anchor=(0.99, 0.99))
+    axs[1].legend(frameon=True, fancybox=True, framealpha=0.9, loc='upper right', bbox_to_anchor=(0.99, 0.99))
 
     # Generate random points for comparison
     if model_type == "SimCLR":
@@ -123,17 +130,18 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
     points_random_t = torch.tensor(points_random_t)
     _, eigenvalues_random = pca(points_random_t)
     x_random = np.arange(len(eigenvalues_random))
-    axs[1].scatter(x_random, eigenvalues_random, label='Eigenvalues/Singular values')#, basefmt=' ')
-    axs[1].set_xlabel('Index')
-    axs[1].set_ylabel('Eigenvalue')
-    axs[1].set_title(f'Eigenvalues of {N_random} random uniform points', pad=20, fontsize=14)
     axs[2].scatter(x_random, eigenvalues_random, label='Eigenvalues/Singular values')#, basefmt=' ')
     axs[2].set_xlabel('Index')
-    axs[2].set_ylabel('Eigenvalue (log scale)')
+    axs[2].set_ylabel('Eigenvalue')
     axs[2].set_title(f'Eigenvalues of {N_random} random uniform points', pad=20, fontsize=14)
-    axs[2].set_yscale('log')
+    axs[3].scatter(x_random, eigenvalues_random, label='Eigenvalues/Singular values')#, basefmt=' ')
+    axs[3].set_xlabel('Index')
+    axs[3].set_ylabel('Eigenvalue (log scale)')
+    axs[3].set_title(f'Eigenvalues of {N_random} random uniform points', pad=20, fontsize=14)
+    axs[3].set_yscale('log')
     # dont show the very last eigenvalue, since its much smaller 
-    axs[2].set_ylim(bottom=eigenvalues_random[-2])
+    axs[3].set_ylim(bottom=eigenvalues_random[-2])
+    axs[3].grid(True)
 
     # Adjust layout
     plt.tight_layout()

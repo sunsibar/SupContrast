@@ -56,15 +56,16 @@ def generate_embeddings(model, dataloader, use_head):
 @click.option('--ckpt', type=str, required=True, help='Path to the pre-trained model checkpoint.')
 @click.option('--output_dir', type=str, default='./embeddings', help='Directory to save the generated embeddings.')
 @click.option('--head', is_flag=True, help='Use the full model output (including head) instead of just the encoder output.')
+@click.option('--norm', type=str, default='batchnorm2d', help='Normalization layer to use.')
 
-def main(model_type, model_architecture, dataset, num_embeddings_per_class, ckpt, output_dir, head):
+def main(model_type, model_architecture, dataset, num_embeddings_per_class, ckpt, output_dir, head, norm):
     # Load the dataset
     dataset_name = dataset
     dataset = load_dataset(dataset_name, num_embeddings_per_class)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=64, shuffle=False, num_workers=8)
 
     # Load the model
-    model = SupConResNet(name=model_architecture).cuda()  # Adjust if using a different model class
+    model = SupConResNet(name=model_architecture, norm=norm).cuda()  # Adjust if using a different model class
     loaded_checkpoint = torch.load(ckpt, map_location="cpu")
     state_dict = loaded_checkpoint['model']
     epoch = loaded_checkpoint['epoch']

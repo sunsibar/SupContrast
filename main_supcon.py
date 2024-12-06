@@ -8,6 +8,7 @@ import math
 
 import tensorboard_logger as tb_logger
 import torch
+import torch.nn as nn
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
 
@@ -16,7 +17,7 @@ from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
 from networks.resnet_big import SupConResNet
 from losses import SupConLoss
-
+from utils.rmsnorm_etc import RMSNorm2d
 try:
     import apex
     from apex import amp, optimizers
@@ -57,6 +58,8 @@ def parse_option():
 
     # model dataset
     parser.add_argument('--model', type=str, default='resnet50')
+    parser.add_argument('--norm', type=str, default='batchnorm',
+                        choices=['batchnorm', 'layernorm', 'rmsnorm2d'], help='normalization type in resnet')
     parser.add_argument('--dataset', type=str, default='cifar10',
                         choices=['cifar10', 'cifar100', 'path'], help='dataset')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
@@ -193,7 +196,13 @@ def set_loader(opt, is_train=True):
 
 
 def set_model(opt):
-    model = SupConResNet(name=opt.model)
+    if opt.norm == 'layernorm':
+        raise AssertionError("Layernorm not yet working for 2d data")
+    elif opt.norm == 'rmsnorm2d':
+        norm = RMSNorm2d
+    else:
+        norm = nn.BatchNorm2d
+    model = SupConResNet(name=opt.model, norm=norm)
     criterion = SupConLoss(temperature=opt.temp)
 
     # enable synchronized Batch Normalization

@@ -7,24 +7,28 @@ Adapted from: https://github.com/bearpaw/pytorch-classification
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from utils.rmsnorm_etc import RMSNorm2d
 
 
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, in_planes, planes, stride=1, is_last=False):
+    def __init__(self, in_planes, planes, stride=1, is_last=False, norm=nn.BatchNorm2d):
         super(BasicBlock, self).__init__()
         self.is_last = is_last
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
+        # self.bn1 = nn.BatchNorm2d(planes)
+        self.bn1 = norm(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+        # self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = norm(planes)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion * planes:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion * planes)
+                # nn.BatchNorm2d(self.expansion * planes)
+                norm(self.expansion * planes)
             )
 
     def forward(self, x):
@@ -42,21 +46,25 @@ class BasicBlock(nn.Module):
 class Bottleneck(nn.Module):
     expansion = 4
 
-    def __init__(self, in_planes, planes, stride=1, is_last=False):
+    def __init__(self, in_planes, planes, stride=1, is_last=False, norm=nn.BatchNorm2d):
         super(Bottleneck, self).__init__()
         self.is_last = is_last
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
+        # self.bn1 = nn.BatchNorm2d(planes)
+        self.bn1 = norm(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+        # self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = norm(planes)
         self.conv3 = nn.Conv2d(planes, self.expansion * planes, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(self.expansion * planes)
+        # self.bn3 = nn.BatchNorm2d(self.expansion * planes)
+        self.bn3 = norm(self.expansion * planes)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion * planes:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, self.expansion * planes, kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion * planes)
+                # nn.BatchNorm2d(self.expansion * planes)
+                norm(self.expansion * planes)
             )
 
     def forward(self, x):
@@ -73,25 +81,28 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, num_blocks, in_channel=3, zero_init_residual=False):
+    def __init__(self, block, num_blocks, in_channel=3, zero_init_residual=False, norm=nn.BatchNorm2d):
         super(ResNet, self).__init__()
-        self.in_planes = 64
-
+        self.in_planes = 64 
         self.conv1 = nn.Conv2d(in_channel, 64, kernel_size=3, stride=1, padding=1,
                                bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
+        # self.bn1 = nn.BatchNorm2d(64)
+        self.bn1 = norm(64)
+        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1, norm=norm)
+        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2, norm=norm)
+        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2, norm=norm)
+        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2, norm=norm)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm)):
+            elif isinstance(m, (nn.BatchNorm2d, nn.GroupNorm, norm)):
                 nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+                try:
+                    nn.init.constant_(m.bias, 0)
+                except AttributeError: # RMSNorm has no bias
+                    pass
 
         # Zero-initialize the last BN in each residual branch,
         # so that the residual branch starts with zeros, and each residual block behaves
@@ -104,12 +115,12 @@ class ResNet(nn.Module):
                 elif isinstance(m, BasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
 
-    def _make_layer(self, block, planes, num_blocks, stride):
+    def _make_layer(self, block, planes, num_blocks, stride, norm=nn.BatchNorm2d):
         strides = [stride] + [1] * (num_blocks - 1)
         layers = []
         for i in range(num_blocks):
             stride = strides[i]
-            layers.append(block(self.in_planes, planes, stride))
+            layers.append(block(self.in_planes, planes, stride, norm=norm))
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
@@ -164,10 +175,18 @@ class LinearBatchNorm(nn.Module):
 
 class SupConResNet(nn.Module):
     """backbone + projection head"""
-    def __init__(self, name='resnet50', head='mlp', feat_dim=128):
+    def __init__(self, name='resnet50', head='mlp', feat_dim=128, norm=nn.BatchNorm2d):
         super(SupConResNet, self).__init__()
         model_fun, dim_in = model_dict[name]
-        self.encoder = model_fun()
+        if type(norm) == str:
+            norm = norm.lower()
+            if norm == 'batchnorm2d':
+                norm = nn.BatchNorm2d
+            elif norm == 'rmsnorm2d':
+                norm = RMSNorm2d
+            else: 
+                raise ValueError(f"Unknown norm: {norm}")
+        self.encoder = model_fun(norm=norm)
         if head == 'linear':
             self.head = nn.Linear(dim_in, feat_dim)
         elif head == 'mlp':
