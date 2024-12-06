@@ -14,7 +14,7 @@ import seaborn as sns
 sys.path.append(str(Path(__file__).parent.parent))
 from util import generate_embeddings_filename 
 from utils.custom_colormap import generate_colormap
-from utils.pca import pca
+from utils.pca import pca, sklearn_pca
 from utils.plot_spectrum import plot_eigenvalues
 from utils.uniform_points import random_uniform_points
 
@@ -76,6 +76,8 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
             subset_embeddings = subset_embeddings / torch.norm(subset_embeddings, dim=1, keepdim=True)
 
     eigenvectors, eigenvalues = pca(subset_embeddings)
+    _, eigenvalues_sklearn = sklearn_pca(subset_embeddings)
+    eigenvalues_sklearn = eigenvalues_sklearn * (len(subset_embeddings) - 1) 
     # if model_type != "SimCLR":
     #     if dataset_name == 'cifar10':
     #         eigenvalues = eigenvalues[:10]
@@ -84,7 +86,7 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
 
     os.makedirs(output_dir, exist_ok=True)
     emb_dim = embeddings.shape[1]
-    file_prefix =  f'{model_type}_{model_architecture}_{dataset_name}_ep-{epoch}{"_head" if head else ""}_N-{len(subset_embeddings)}_emb-dim-{emb_dim}{"_normalized" if normalize else ""}'
+    file_prefix =  f'{model_type}_{model_architecture}_{dataset_name}_ep-{epoch}{"_head" if head else ""}_N-{len(subset_embeddings)}_emb-dim-{emb_dim}{"_normalized" if normalize else ""}_trial-{trial}'
     # plot_eigenvalues(eigenvalues,
     #                  f'Eigenvalues of {model_type} ({model_architecture}) {dataset_name} embeddings', 
     #                  os.path.join(output_dir, file_prefix),
@@ -93,8 +95,8 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
 
 
 
-    # Create a figure with two subplots
-    fig, axs = plt.subplots(2, 2, figsize=(14, 10))
+    # Create a figure with three rows and two columns
+    fig, axs = plt.subplots(3, 2, figsize=(14, 10))
     axs = axs.flatten()
     # Plot eigenvalues
     # sns.set_style("whitegrid")
@@ -113,14 +115,29 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
     axs[1].set_ylabel('Eigenvalue (log scale)')
     axs[1].set_title(f'Eigenvalues of {model_type}\n({model_architecture}) {dataset_name} embeddings', pad=20, fontsize=14)
 
+    # Create scatter plot for eigenvalues
+    axs[4].scatter(x, eigenvalues_sklearn, label='Eigenvalues (sklearn)')#, basefmt=' ')
+    axs[4].set_xlabel('Index')
+    axs[4].set_ylabel('Eigenvalue')
+    axs[4].set_title(f'Eigenvalues of {model_type}\n({model_architecture}) {dataset_name} embeddings', pad=20, fontsize=14)
+    # Logscale
+    axs[5].scatter(x, eigenvalues_sklearn, label='Eigenvalues (sklearn, log scale)')#, basefmt=' ')
+    axs[5].set_xlabel('Index')
+    axs[5].set_ylabel('Eigenvalue (log scale)')
+    axs[5].set_title(f'Eigenvalues of {model_type}\n({model_architecture}) {dataset_name} embeddings', pad=20, fontsize=14)
+
     # Set y-axis to log scale if needed
     # Uncomment the next line if you want to use log scale
     axs[1].set_yscale('log')
     axs[1].grid(True)
+    axs[5].set_yscale('log')
+    axs[5].grid(True)
 
     # Add legend
     axs[0].legend(frameon=True, fancybox=True, framealpha=0.9, loc='upper right', bbox_to_anchor=(0.99, 0.99))
     axs[1].legend(frameon=True, fancybox=True, framealpha=0.9, loc='upper right', bbox_to_anchor=(0.99, 0.99))
+    axs[4].legend(frameon=True, fancybox=True, framealpha=0.9, loc='upper right', bbox_to_anchor=(0.99, 0.99))
+    axs[5].legend(frameon=True, fancybox=True, framealpha=0.9, loc='upper right', bbox_to_anchor=(0.99, 0.99))
 
     # Generate random points for comparison
     if model_type == "SimCLR":

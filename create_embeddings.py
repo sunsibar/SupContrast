@@ -57,8 +57,9 @@ def generate_embeddings(model, dataloader, use_head):
 @click.option('--output_dir', type=str, default='./embeddings', help='Directory to save the generated embeddings.')
 @click.option('--head', is_flag=True, help='Use the full model output (including head) instead of just the encoder output.')
 @click.option('--norm', type=str, default='batchnorm2d', help='Normalization layer to use.')
+@click.option('--trial', type=str, default="0", help='Trial number.')
 
-def main(model_type, model_architecture, dataset, num_embeddings_per_class, ckpt, output_dir, head, norm):
+def main(model_type, model_architecture, dataset, num_embeddings_per_class, ckpt, output_dir, head, norm,  trial):
     # Load the dataset
     dataset_name = dataset
     dataset = load_dataset(dataset_name, num_embeddings_per_class)
@@ -77,7 +78,7 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class, ckpt
 
     # Save embeddings
     os.makedirs(output_dir, exist_ok=True)
-    filename = generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head, epoch)
+    filename = generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head, epoch, trial)
 
     # Save as a dictionary
     torch.save({'embeddings': embeddings, 'labels': labels, 'epoch': epoch}, os.path.join(output_dir, filename))

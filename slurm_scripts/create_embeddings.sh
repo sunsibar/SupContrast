@@ -82,36 +82,38 @@ echo "CKPT: $CKPT"
 echo "HEAD: $HEAD"
 echo "NORM: $NORM"
 
-srun singularity exec -p --nv \
-    --pwd /src/SupContrast \
-    $SINGULARITY_COMMANDS \
-    --bind $CUR_BASE_PATH:/src/SupContrast \
-    $singularity_img_path \
-    /usr/bin/python3.10 -u /src/SupContrast/create_embeddings.py \
-        --model_type $MODEL_TYPE \
-        --model_architecture $MODEL \
-        --dataset $DATASET \
-        --num_embeddings_per_class $NUM_EMBEDDINGS_PER_CLASS \
-        --ckpt $CKPT \
-        --output_dir ./embeddings \
-        --norm $NORM \
-        $HEAD # Use the full model output
+# srun singularity exec -p --nv \
+#     --pwd /src/SupContrast \
+#     $SINGULARITY_COMMANDS \
+#     --bind $CUR_BASE_PATH:/src/SupContrast \
+#     $singularity_img_path \
+#     /usr/bin/python3.10 -u /src/SupContrast/create_embeddings.py \
+#         --model_type $MODEL_TYPE \
+#         --model_architecture $MODEL \
+#         --dataset $DATASET \
+#         --num_embeddings_per_class $NUM_EMBEDDINGS_PER_CLASS \
+#         --ckpt $CKPT \
+#         --output_dir ./embeddings \
+#         --norm $NORM \
+#         --trial $TRIAL \
+#         $HEAD # Use the full model output
 
-# Directly create t-SNE plots
-srun singularity exec -p --nv \
-    --pwd /src/SupContrast \
-    $SINGULARITY_COMMANDS \
-    --bind $CUR_BASE_PATH:/src/SupContrast \
-    $singularity_img_path \
-    /usr/bin/python3.10 -u /src/SupContrast/analyses/tSNE_of_embeddings.py \
-        --model_type $MODEL_TYPE \
-        --model_architecture $MODEL \
-        --dataset $DATASET \
-        --num_embeddings_per_class 200 \
-        --embeddings_dir ./embeddings \
-        --epoch $EPOCH \
-        --output_dir ./analyses/plots/tSNE \
-        $HEAD # Use the full model output
+# # Directly create t-SNE plots
+# srun singularity exec -p --nv \
+#     --pwd /src/SupContrast \
+#     $SINGULARITY_COMMANDS \
+#     --bind $CUR_BASE_PATH:/src/SupContrast \
+#     $singularity_img_path \
+#     /usr/bin/python3.10 -u /src/SupContrast/analyses/tSNE_of_embeddings.py \
+#         --model_type $MODEL_TYPE \
+#         --model_architecture $MODEL \
+#         --dataset $DATASET \
+#         --num_embeddings_per_class 200 \
+#         --embeddings_dir ./embeddings \
+#         --epoch $EPOCH \
+#         --trial $TRIAL \
+#         --output_dir ./analyses/plots/tSNE \
+#         $HEAD # Use the full model output
 
 # SVD
 srun singularity exec -p --nv \

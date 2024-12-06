@@ -24,14 +24,14 @@ from utils.custom_colormap import generate_colormap
 @click.option('--n_components', type=int, default=2, help='Number of components for t-SNE.')
 @click.option('--head', is_flag=True, help='Use the head of the model.')
 @click.option('--epoch', type=int, default=1500, help='Epoch number of the pre-trained model checkpoint.')
-
-def main(model_type, model_architecture, dataset, num_embeddings_per_class, embeddings_dir, output_dir, perplexity, n_components, head, epoch):
+@click.option('--trial', type=str, default="0", help='Trial number.')
+def main(model_type, model_architecture, dataset, num_embeddings_per_class, embeddings_dir, output_dir, perplexity, n_components, head, epoch, trial):
     # Load embeddings and labels
     dataset_name = dataset
     try:
-        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, -1, head, epoch)
+        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, -1, head, epoch, trial)
     except FileNotFoundError:
-        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head)
+        embeddings_filename =  generate_embeddings_filename(model_type, dataset_name, model_architecture, num_embeddings_per_class, head, epoch, trial)
     embeddings_path = os.path.join(embeddings_dir, embeddings_filename)
     embeddings_data = torch.load(embeddings_path)
     print(f"Loaded embeddings from {embeddings_path}")
@@ -95,7 +95,7 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class, embe
 
     emb_dim = embeddings.shape[1]
     # Generate the plot filename using the utility function
-    tsne_filename = f'tSNE_{model_type}_{dataset_name}_dim-{emb_dim}_{model_architecture}_perplexity_{perplexity}_n_components_{n_components}_{"num_embeddings_" + str(num_embeddings_per_class) if num_embeddings_per_class != -1 else "all"}{"_head" if head else ""}_ep-{epoch}.png'
+    tsne_filename = f'tSNE_{model_type}_{dataset_name}_dim-{emb_dim}_{model_architecture}_perplexity_{perplexity}_n_components_{n_components}_{"num_embeddings_" + str(num_embeddings_per_class) if num_embeddings_per_class != -1 else "all"}{"_head" if head else ""}_ep-{epoch}_trial-{trial}.png'
     plot_file = os.path.join(output_dir, tsne_filename)
     plt.savefig(plot_file)
     plt.close()
