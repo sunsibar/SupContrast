@@ -78,6 +78,8 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
     eigenvectors, eigenvalues = pca(subset_embeddings)
     _, eigenvalues_sklearn = sklearn_pca(subset_embeddings)
     eigenvalues_sklearn = eigenvalues_sklearn * (len(subset_embeddings) - 1) 
+    debug_both_methods(subset_embeddings)
+    debug_pca(subset_embeddings)
     # if model_type != "SimCLR":
     #     if dataset_name == 'cifar10':
     #         eigenvalues = eigenvalues[:10]
@@ -169,6 +171,72 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
     plt.show()
 
     print(f"Eigenvalues plot saved to {os.path.join(output_dir, f'{file_prefix}_spectrum.png')}")
+
+
+def debug_pca(t: torch.Tensor):
+    from sklearn.decomposition import PCA
+    # Your PCA
+    t_centered = t - t.mean(dim=0, keepdim=True)
+    print("Centered data stats:")
+    print("Mean of centered data:", t_centered.mean(dim=0)[:5])
+    print("Norm of centered data:", torch.norm(t_centered))
+    
+    u, s, vh = torch.linalg.svd(t_centered)
+    print("\nDirect SVD values:")
+    print("Singular values:", s[:5])
+    print("Squared singular values:", s[:5]**2)
+    
+    # Sklearn PCA
+    t_np = t.cpu().numpy()
+    pca_ = PCA(n_components=min(t.shape[1], t.shape[0]))
+    pca_.fit(t_np)
+    print("\nSklearn values:")
+    print("Singular values:", pca_.singular_values_[:5])
+    print("Explained variance:", pca_.explained_variance_[:5])
+    print("Explained variance * (n-1):", pca_.explained_variance_[:5] * (t.shape[0]-1))
+
+def debug_both_methods(t: torch.Tensor):
+    from sklearn.decomposition import PCA
+    # Your PCA
+    t_centered = t - t.mean(dim=0, keepdim=True)
+    print("Direct method centered data:")
+    print("Norm:", torch.norm(t_centered))
+    print("Mean:", t_centered.mean(dim=0)[:5])
+    
+    # Sklearn
+    t_np = t.cpu().numpy()
+    pca_ = PCA(n_components=min(t.shape[1], t.shape[0]))
+    pca_.fit(t_np)
+    t_centered_sklearn = t_np - pca_.mean_
+    print("\nSklearn centered data:")
+    print("Norm:", np.linalg.norm(t_centered_sklearn))
+    print("Mean:", t_centered_sklearn.mean(axis=0)[:5])
+
+def debug_centering(t: torch.Tensor):
+    # Your method
+    mean1 = t.mean(dim=0, keepdim=True)
+    t_centered1 = t - mean1
+    
+    # Sklearn's method (but implemented manually)
+    t_np = t.cpu().numpy()
+    mean2 = np.mean(t_np, axis=0)
+    t_centered2 = t_np - mean2
+    
+    print("Your method:")
+    print("Mean shape:", mean1.shape)
+    print("First few means:", mean1[0, :5])
+    
+    print("\nSklearn method:")
+    print("Mean shape:", mean2.shape)
+    print("First few means:", mean2[:5])
+    
+    # Convert to same format for comparison
+    mean1_np = mean1.cpu().numpy()
+    print("\nAbsolute difference in means:", np.abs(mean1_np - mean2).max())
+    
+    # Check if there's any numerical precision difference
+    print("Your centered data dtype:", t_centered1.dtype)
+    print("Sklearn centered data dtype:", t_centered2.dtype)
 
 
 if __name__ == '__main__':

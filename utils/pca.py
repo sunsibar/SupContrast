@@ -11,7 +11,7 @@ def pca(t:torch.Tensor):
     return eigenvectors, eig_sorted
 
 def sklearn_pca(t:torch.Tensor):
-    pca_ = PCA(n_components=min(t.shape[1], t.shape[0]))
+    pca_ = PCA(n_components=min(t.shape[1], t.shape[0]), svd_solver='full')
     t_np = t.cpu().numpy()
     pca_.fit(t_np)
     eigenvalues = pca_.explained_variance_
