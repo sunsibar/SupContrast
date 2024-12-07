@@ -55,6 +55,8 @@ def parse_option():
                         help='weight decay')
     parser.add_argument('--momentum', type=float, default=0.9,
                         help='momentum')
+    parser.add_argument('--train_on_neg_only', action='store_true',
+                        help='train on negative only')
 
     # model dataset
     parser.add_argument('--model', type=str, default='resnet50')
@@ -203,7 +205,7 @@ def set_model(opt):
     else:
         norm = nn.BatchNorm2d
     model = SupConResNet(name=opt.model, norm=norm)
-    criterion = SupConLoss(temperature=opt.temp)
+    criterion = SupConLoss(temperature=opt.temp, neg_only=opt.train_on_neg_only)
 
     # enable synchronized Batch Normalization
     if opt.syncBN:
@@ -365,6 +367,7 @@ def main():
         logger.log_value('train_loss', loss, epoch + start_epoch)
         logger.log_value('val_loss', val_loss, epoch + start_epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch + start_epoch)
+        logger.log_value('train_on_neg_only', int(opt.train_on_neg_only), epoch + start_epoch)
 
         if epoch % opt.save_freq == 0:
             save_file = get_model_file(opt, epoch + start_epoch)

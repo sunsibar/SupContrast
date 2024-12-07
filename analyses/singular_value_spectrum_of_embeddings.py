@@ -78,8 +78,8 @@ def main(model_type, model_architecture, dataset, num_embeddings_per_class,
     eigenvectors, eigenvalues = pca(subset_embeddings)
     _, eigenvalues_sklearn = sklearn_pca(subset_embeddings)
     eigenvalues_sklearn = eigenvalues_sklearn * (len(subset_embeddings) - 1) 
-    debug_both_methods(subset_embeddings)
-    debug_pca(subset_embeddings)
+    # debug_both_methods(subset_embeddings)
+    # debug_pca(subset_embeddings)
     # if model_type != "SimCLR":
     #     if dataset_name == 'cifar10':
     #         eigenvalues = eigenvalues[:10]

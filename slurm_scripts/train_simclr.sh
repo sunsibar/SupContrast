@@ -42,10 +42,11 @@ MODEL_TYPE="SimCLR"
 # LR_RELOAD=0.5
 TEMPERATURE=0.5
 # LR=0
-NORM="rmsnorm2d"
-TRIAL="rmsnorm2d"
+NORM="batchnorm"
+TRIAL="pretrain_neg_only_longer"
 LR=0.5
-
+# TRAIN_ON_NEG_ONLY=""
+TRAIN_ON_NEG_ONLY=" --train_on_neg_only "
 # CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR_RELOAD}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
 
 echo "DATASET: $DATASET"
@@ -55,6 +56,7 @@ echo "TEMPERATURE: $TEMPERATURE"
 echo "MODEL_TYPE: $MODEL_TYPE"
 echo "NORM: $NORM"
 echo "TRIAL: $TRIAL"
+echo "TRAIN_ON_NEG_ONLY: $TRAIN_ON_NEG_ONLY"
 
 
 srun singularity exec -p --nv \
@@ -63,14 +65,15 @@ srun singularity exec -p --nv \
     --bind $CUR_BASE_PATH:/src/SupContrast \
     $singularity_img_path \
     /usr/bin/python3.10 -u /src/SupContrast/main_supcon.py \
-        --batch_size 1024 \
+        --batch_size 2048 \
         --learning_rate $LR \
         --temp $TEMPERATURE \
         --cosine \
         --dataset $DATASET \
         --num_workers 8 \
         --model $MODEL \
-        --epochs 1500 \
+        --epochs 3000 \
         --method SimCLR \
         --trial $TRIAL \
-        --norm $NORM
+        --norm $NORM \
+        $TRAIN_ON_NEG_ONLY

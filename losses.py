@@ -12,13 +12,18 @@ from utils.uniform_points import random_uniform_points
 
 class SupConLoss(nn.Module):
     """Supervised Contrastive Learning: https://arxiv.org/pdf/2004.11362.pdf.
-    It also supports the unsupervised contrastive loss in SimCLR"""
+    It also supports the unsupervised contrastive loss in SimCLR
+    :param neg_only: Train on the denominator of contrastive loss only. 
+                     The values of the loss will be the same, but we detach the positive part.
+                     For a pretraining stage.
+    """
     def __init__(self, temperature=0.07, contrast_mode='all',
-                 base_temperature=0.07):
+                 base_temperature=0.07, neg_only=False):
         super(SupConLoss, self).__init__()
         self.temperature = temperature
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
+        self.neg_only = neg_only
 
     def forward(self, features, labels=None, mask=None):
         """Compute loss for model. If both `labels` and `mask` are None,
@@ -67,6 +72,9 @@ class SupConLoss(nn.Module):
         else:
             raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
 
+        # if self.stop_grad:
+        #     anchor_feature = anchor_feature.detach()
+    
         # compute logits
         anchor_dot_contrast = torch.div(
             torch.matmul(anchor_feature, contrast_feature.T),
@@ -88,7 +96,10 @@ class SupConLoss(nn.Module):
 
         # compute log_prob
         exp_logits = torch.exp(logits) * logits_mask
-        log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+        if self.neg_only:
+            log_prob = logits.detach() - torch.log(exp_logits.sum(1, keepdim=True))
+        else:
+            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
         # compute mean of log-likelihood over positive
         # modified to handle edge cases when there is no positive pair
