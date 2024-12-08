@@ -42,7 +42,7 @@ MODEL_TYPE=${MODEL_TYPES[$TASK_INDEX]}
 DATASET=${DATASETS[$TASK_INDEX]}
 HEAD="--head"
 # HEAD=" "
-EPOCH=250
+EPOCH=2000
 EPOCH_NAME=" "  
 # EPOCH_NAME="last"   
 # TRIAL="0" 
@@ -53,7 +53,7 @@ TRIAL="pretrain_neg_only"
 NORM="batchnorm2d"
 # NORM="rmsnorm2d"
 # BATCH_SIZE=2048
-BATCH_SIZE=1024
+BATCH_SIZE=2048
 
 NUM_EMBEDDINGS_PER_CLASS=-1  # Use entire dataset
 
