@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
-#SBATCH --array=3-3
+#SBATCH --array=0-3
 
 # Load configuration
 source slurm_scripts/config.sh
@@ -31,22 +31,27 @@ $ADD_CMDS
 scontrol show job "$SLURM_JOB_ID"
 echo $PATH
 
-DATASETS=("cifar10" "cifar100" "cifar10" "cifar100")
-MODELS=("resnet18" "resnet18" "resnet34" "resnet34")
+DATASETS=("cifar10" "cifar100" "cifar10" "cifar100" "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100")
+# DATASET=${DATASETS[$SLURM_ARRAY_TASK_ID]}
+# MODELS=("resnet18" "resnet18" "resnet34" "resnet34" "resnet34" "resnet34")
+MODEL="resnet18" 
+DATASET="cifar100"
+EMB_DIMS=(128 64 32 16)
+# EMB_DIMS=(128 128 128 128 64 64 32 32 16 16 8 8 4 4 3 3)
 
 echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID"
 
-DATASET=${DATASETS[$SLURM_ARRAY_TASK_ID]}
-MODEL=${MODELS[$SLURM_ARRAY_TASK_ID]}
+# MODEL=${MODELS[$SLURM_ARRAY_TASK_ID]}
+EMB_DIM=${EMB_DIMS[$SLURM_ARRAY_TASK_ID]}
 MODEL_TYPE="SimCLR"
 # LR_RELOAD=0.5
 TEMPERATURE=0.5
 # LR=0
 NORM="batchnorm"
-TRIAL="pretrain_neg_only_longer"
+TRIAL="emb-dim-${EMB_DIM}_with-linear-eval"
 LR=0.5
-# TRAIN_ON_NEG_ONLY=""
-TRAIN_ON_NEG_ONLY=" --train_on_neg_only "
+TRAIN_ON_NEG_ONLY=""
+# TRAIN_ON_NEG_ONLY=" --train_on_neg_only "
 # CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR_RELOAD}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_trial_0_cosine_warm/ckpt_epoch_${EPOCH}.pth" 
 
 echo "DATASET: $DATASET"
@@ -57,7 +62,7 @@ echo "MODEL_TYPE: $MODEL_TYPE"
 echo "NORM: $NORM"
 echo "TRIAL: $TRIAL"
 echo "TRAIN_ON_NEG_ONLY: $TRAIN_ON_NEG_ONLY"
-
+echo "EMB_DIM: $EMB_DIM"
 
 srun singularity exec -p --nv \
     --pwd /src/SupContrast \
@@ -75,5 +80,11 @@ srun singularity exec -p --nv \
         --epochs 3000 \
         --method SimCLR \
         --trial $TRIAL \
+        --emb_dim $EMB_DIM \
         --norm $NORM \
-        $TRAIN_ON_NEG_ONLY
+        --proj_head linear \
+        $TRAIN_ON_NEG_ONLY \
+        --linear_eval 
+
+
+        # --weight_decay 0.001 \

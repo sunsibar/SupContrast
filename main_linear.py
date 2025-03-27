@@ -7,12 +7,14 @@ import math
 
 import torch
 import torch.backends.cudnn as cudnn
+import torch.nn as nn
 
 from main_ce import set_loader
 from util import AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate, accuracy
 from util import set_optimizer
 from networks.resnet_big import SupConResNet, LinearClassifier
+from utils.rmsnorm_etc import RMSNorm2d
 
 try:
     import apex
@@ -49,6 +51,12 @@ def parse_option():
 
     # model dataset
     parser.add_argument('--model', type=str, default='resnet50')
+    parser.add_argument('--norm', type=str, default='batchnorm',
+                        choices=['batchnorm', 'layernorm', 'rmsnorm2d'], help='normalization type in resnet')
+    parser.add_argument('--emb_dim', type=int, default=128,
+                        help='embedding dimension (of the output of the projection head)')
+    parser.add_argument('--proj_head', type=str, default='linear',
+                        choices=['linear', 'mlp'], help='projection head type')
     parser.add_argument('--dataset', type=str, default='cifar10',
                         choices=['cifar10', 'cifar100'], help='dataset')
 
@@ -62,6 +70,13 @@ def parse_option():
                         help='path to pre-trained model')
 
     opt = parser.parse_args()
+
+    opt = process_opt(opt)
+
+    return opt
+
+
+def process_opt(opt):
 
     # set the path according to the environment
     opt.data_folder = './datasets/'
@@ -99,9 +114,15 @@ def parse_option():
 
     return opt
 
-
 def set_model(opt):
-    model = SupConResNet(name=opt.model)
+
+    if opt.norm == 'layernorm':
+        raise AssertionError("Layernorm not yet working for 2d data")
+    elif opt.norm == 'rmsnorm2d':
+        norm = RMSNorm2d
+    else:
+        norm = nn.BatchNorm2d
+    model = SupConResNet(name=opt.model, norm=norm, feat_dim=opt.emb_dim, head=opt.proj_head)
     criterion = torch.nn.CrossEntropyLoss()
 
     classifier = LinearClassifier(name=opt.model, num_classes=opt.n_cls)

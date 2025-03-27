@@ -5,6 +5,7 @@ import sys
 import argparse
 import time
 import math
+from argparse import Namespace
 
 import tensorboard_logger as tb_logger
 import torch
@@ -15,9 +16,15 @@ from torchvision import transforms, datasets
 from util import TwoCropTransform, AverageMeter
 from util import adjust_learning_rate, warmup_learning_rate
 from util import set_optimizer, save_model
-from networks.resnet_big import SupConResNet
+from networks.resnet_big import SupConResNet, LinearClassifier
 from losses import SupConLoss
 from utils.rmsnorm_etc import RMSNorm2d
+from main_ce import set_loader as set_loader_ce
+from main_linear import process_opt as process_opt_linear
+from main_linear import train as train_linear
+from main_linear import validate as validate_linear
+from main_linear import adjust_learning_rate as adjust_learning_rate_linear
+from main_linear import set_optimizer as set_optimizer_linear
 try:
     import apex
     from apex import amp, optimizers
@@ -62,6 +69,10 @@ def parse_option():
     parser.add_argument('--model', type=str, default='resnet50')
     parser.add_argument('--norm', type=str, default='batchnorm',
                         choices=['batchnorm', 'layernorm', 'rmsnorm2d'], help='normalization type in resnet')
+    parser.add_argument('--emb_dim', type=int, default=128,
+                        help='embedding dimension (of the output of the projection head)')
+    parser.add_argument('--proj_head', type=str, default='linear',
+                        choices=['linear', 'mlp'], help='projection head type')
     parser.add_argument('--dataset', type=str, default='cifar10',
                         choices=['cifar10', 'cifar100', 'path'], help='dataset')
     parser.add_argument('--mean', type=str, help='mean of dataset in path in form of str tuple')
@@ -87,6 +98,22 @@ def parse_option():
     parser.add_argument('--trial', type=str, default='0',
                         help='id for recording multiple runs')
 
+    # linear evaluation during training
+    parser.add_argument('--linear_eval', action='store_true',
+                        help='perform linear evaluation during training (whenever the model is stored)')
+    parser.add_argument('--eval_freq', type=int, default=0,
+                        help='frequency to perform linear evaluation (0 to disable)')
+    parser.add_argument('--linear_eval_epochs', type=int, default=100,
+                        help='number of epochs for linear evaluation')
+    parser.add_argument('--linear_learning_rate', type=float, default=0.1,
+                        help='learning rate for linear evaluation')
+    parser.add_argument('--linear_learning_rate_decay', type=float, default=0.2,
+                        help='learning rate decay for linear evaluation')
+    parser.add_argument('--linear_momentum', type=float, default=0.9,
+                        help='momentum for linear evaluation')
+    parser.add_argument('--linear_weight_decay', type=float, default=0,
+                        help='weight decay for linear evaluation')
+
     opt = parser.parse_args()
 
     # check if dataset is path that passed required arguments
@@ -99,7 +126,8 @@ def parse_option():
     if opt.data_folder is None:
         opt.data_folder = './datasets/'
     opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
-    opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
+    # opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
+    opt.tb_path = f'./save/{opt.method}/{opt.dataset}_tensorboard'
 
     iterations = opt.lr_decay_epochs.split(',')
     opt.lr_decay_epochs = list([])
@@ -135,7 +163,30 @@ def parse_option():
     if not os.path.isdir(opt.save_folder):
         os.makedirs(opt.save_folder)
 
-    return opt
+    if opt.linear_eval:
+        linear_opt = Namespace()
+        linear_opt.batch_size = opt.batch_size
+        linear_opt.num_workers = opt.num_workers
+        linear_opt.epochs = opt.linear_eval_epochs
+        linear_opt.learning_rate = opt.linear_learning_rate
+        linear_opt.lr_decay_epochs = '60,75,90'
+        linear_opt.lr_decay_rate = opt.linear_learning_rate_decay
+        linear_opt.momentum = opt.linear_momentum
+        linear_opt.weight_decay = opt.linear_weight_decay
+        linear_opt.model = opt.model
+        linear_opt.norm = opt.norm
+        linear_opt.emb_dim = opt.emb_dim
+        linear_opt.proj_head = opt.proj_head
+        linear_opt.dataset = opt.dataset 
+        linear_opt.cosine = False
+        linear_opt.warm = False 
+        linear_opt.print_freq = 100
+        linear_opt = process_opt_linear(linear_opt)
+    else:
+        linear_opt = None
+
+
+    return opt, linear_opt
 
 
 def get_model_file(opt, epoch):
@@ -204,7 +255,7 @@ def set_model(opt):
         norm = RMSNorm2d
     else:
         norm = nn.BatchNorm2d
-    model = SupConResNet(name=opt.model, norm=norm)
+    model = SupConResNet(name=opt.model, norm=norm, feat_dim=opt.emb_dim, head=opt.proj_head)
     criterion = SupConLoss(temperature=opt.temp, neg_only=opt.train_on_neg_only)
 
     # enable synchronized Batch Normalization
@@ -332,8 +383,66 @@ def validate(val_loader, model, criterion, opt):
     return losses.avg
 
 
+def set_linear_classifier(opt, linear_opt):
+    """Set up linear classifier for evaluation"""
+    classifier = LinearClassifier(name=opt.model, num_classes=10 if opt.dataset == 'cifar10' else 100)
+    criterion = torch.nn.CrossEntropyLoss()
+    
+    if torch.cuda.is_available():
+        classifier = classifier.cuda()
+        criterion = criterion.cuda()
+    
+    # Use the same optimizer settings as in main_linear.py
+    optimizer = set_optimizer_linear(linear_opt, classifier)
+    # optimizer = torch.optim.SGD(classifier.parameters(),
+    #                             lr=opt.linear_learning_rate,
+    #                             momentum=opt.linear_momentum,
+    #                             weight_decay=opt.linear_weight_decay)
+    
+    return classifier, criterion, optimizer
+
+
+def linear_eval(model, opt, linear_opt, logger, epoch):
+    """Perform linear evaluation"""
+    print("=== Performing linear evaluation ===")
+    
+    # Create data loaders for linear evaluation
+    # We need to modify set_loader to handle non-TwoCropTransform case
+    # train_loader = set_loader(opt, is_train=True, two_crop=False)
+    # val_loader = set_loader(opt, is_train=False, two_crop=False)
+    train_loader, val_loader = set_loader_ce(opt)
+
+    
+    # Set up linear classifier
+    classifier, criterion, optimizer = set_linear_classifier(opt, linear_opt)
+    
+    best_acc = 0
+    for e in range(1, opt.linear_eval_epochs + 1):
+        # Adjust learning rate according to schedule
+
+        adjust_learning_rate(linear_opt, optimizer, e)
+            
+        # Train for one epoch
+        train_loss, train_acc = train_linear(train_loader, model, classifier, criterion, optimizer, e, linear_opt)
+        
+        # Evaluate on validation set
+        val_loss, val_acc = validate_linear(val_loader, model, classifier, criterion, linear_opt)
+        
+        if val_acc > best_acc:
+            best_acc = val_acc
+            
+        # Print progress every 20 epochs
+        if e % 100 == 0 or e == opt.linear_eval_epochs or e == 1:
+            print(f'Linear eval epoch {e}, train_acc: {train_acc:.2f}, val_acc: {val_acc:.2f}, best_acc: {best_acc:.2f}')
+    
+    # Log the best accuracy to tensorboard
+    logger.log_value('linear_eval_acc', best_acc, epoch)
+    print(f"=== Linear evaluation complete. Best accuracy: {best_acc:.2f} ===")
+    
+    return best_acc
+
 def main():
-    opt = parse_option()
+    opt, linear_opt = parse_option()
 
     # build data loader
     train_loader = set_loader(opt, is_train=True)
@@ -347,6 +456,10 @@ def main():
 
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
+
+    if start_epoch == 0:
+        save_file = get_model_file(opt, 0) 
+        save_model(model, optimizer, opt, 0, save_file)
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
@@ -368,6 +481,11 @@ def main():
         logger.log_value('val_loss', val_loss, epoch + start_epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch + start_epoch)
         logger.log_value('train_on_neg_only', int(opt.train_on_neg_only), epoch + start_epoch)
+
+        # perform linear evaluation if specified
+        if opt.linear_eval and (epoch % opt.save_freq == 0  or epoch == opt.epochs):
+            linear_acc = linear_eval(model, opt, linear_opt,logger, epoch + start_epoch)
+            print(f'Linear evaluation accuracy at epoch {epoch + start_epoch}: {linear_acc:.2f}')
 
         if epoch % opt.save_freq == 0:
             save_file = get_model_file(opt, epoch + start_epoch)
