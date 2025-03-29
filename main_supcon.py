@@ -10,6 +10,7 @@ from argparse import Namespace
 import tensorboard_logger as tb_logger
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
 
@@ -30,6 +31,7 @@ try:
     from apex import amp, optimizers
 except ImportError:
     pass
+from torch.nn import BCEWithLogitsLoss
 
 
 def parse_option():
@@ -113,6 +115,12 @@ def parse_option():
                         help='momentum for linear evaluation')
     parser.add_argument('--linear_weight_decay', type=float, default=0,
                         help='weight decay for linear evaluation')
+
+    # binary evaluation during training
+    parser.add_argument('--binary_eval', action='store_true',
+                        help='perform binary evaluation during training')
+    parser.add_argument('--binary_num_classes', type=int, default=10,
+                        help='number of classes for binary evaluation')
 
     opt = parser.parse_args()
 
@@ -402,7 +410,7 @@ def set_linear_classifier(opt, linear_opt):
     return classifier, criterion, optimizer
 
 
-def linear_eval(model, opt, linear_opt, logger, epoch):
+def linear_eval(model, opt, linear_opt, logger, epoch, log_individual_n_classes=10):
     """Perform linear evaluation"""
     print("=== Performing linear evaluation ===")
     
@@ -417,19 +425,27 @@ def linear_eval(model, opt, linear_opt, logger, epoch):
     classifier, criterion, optimizer = set_linear_classifier(opt, linear_opt)
     
     best_acc = 0
+    best_acc_per_class = [0] * log_individual_n_classes
     for e in range(1, opt.linear_eval_epochs + 1):
         # Adjust learning rate according to schedule
 
         adjust_learning_rate(linear_opt, optimizer, e)
             
         # Train for one epoch
-        train_loss, train_acc = train_linear(train_loader, model, classifier, criterion, optimizer, e, linear_opt)
+        train_loss, train_acc, train_acc_per_class = \
+            train_linear(train_loader, model, classifier, criterion, optimizer, e, linear_opt,
+                         log_individual_n_classes=log_individual_n_classes)
         
         # Evaluate on validation set
-        val_loss, val_acc = validate_linear(val_loader, model, classifier, criterion, linear_opt)
+        val_loss, val_acc, val_acc_per_class = \
+            validate_linear(val_loader, model, classifier, criterion, linear_opt,
+            log_individual_n_classes=log_individual_n_classes)
         
         if val_acc > best_acc:
             best_acc = val_acc
+        for i in range(log_individual_n_classes):
+            if val_acc_per_class[i] > best_acc_per_class[i]:
+                best_acc_per_class[i] = val_acc_per_class[i]
             
         # Print progress every 20 epochs
         if e % 100 == 0 or e == opt.linear_eval_epochs or e == 1:
@@ -437,9 +453,200 @@ def linear_eval(model, opt, linear_opt, logger, epoch):
     
     # Log the best accuracy to tensorboard
     logger.log_value('linear_eval_acc', best_acc, epoch)
+    for i in range(log_individual_n_classes):
+        logger.log_value(f'linear_eval_acc_class_{i}', best_acc_per_class[i], epoch)
+        
     print(f"=== Linear evaluation complete. Best accuracy: {best_acc:.2f} ===")
     
     return best_acc
+
+class MultiBinaryClassifier(nn.Module):
+    def __init__(self, name='resnet18', num_classes=10):
+        super(MultiBinaryClassifier, self).__init__()
+        dim_in = 2048
+        if name.startswith('resnet'):
+            if name.endswith('18'):
+                dim_in = 512
+            elif name.endswith('34'):
+                dim_in = 512
+            elif name.endswith('50'):
+                dim_in = 2048
+            elif name.endswith('101'):
+                dim_in = 2048
+        
+        # Create a single linear layer with multiple outputs (one per class)
+        self.fc = nn.Linear(dim_in, num_classes)
+
+    def forward(self, x):
+        return self.fc(x)  # Shape: [batch_size, num_classes]
+
+
+def binary_eval(model, opt, linear_opt, logger, epoch, num_classes=10):
+    """Perform binary single-class evaluation with joint training"""
+    print(f"=== Performing joint binary evaluation for first {num_classes} classes ===")
+    
+    # Create data loaders for evaluation
+    train_loader, val_loader = set_loader_ce(opt)
+    
+    # Set up multi-binary classifier
+    classifier = MultiBinaryClassifier(name=opt.model, num_classes=num_classes)
+    criterion = BCEWithLogitsLoss()
+    
+    if torch.cuda.is_available():
+        classifier = classifier.cuda()
+        criterion = criterion.cuda()
+    
+    optimizer = torch.optim.SGD(classifier.parameters(),
+                                lr=opt.linear_learning_rate,
+                                momentum=opt.linear_momentum,
+                                weight_decay=opt.linear_weight_decay)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.1)
+    # Track best accuracy for each class
+    best_accs = [0] * num_classes
+    
+    for e in range(1, opt.linear_eval_epochs + 1):
+        adjust_learning_rate(linear_opt, optimizer, e)
+        
+        # Train for one epoch
+        train_loss, train_accs = train_binary_joint(train_loader, model, classifier, criterion, optimizer, e, opt, num_classes)
+        scheduler.step(train_loss)
+
+        # Evaluate
+        val_loss, val_accs = validate_binary_joint(val_loader, model, classifier, criterion, opt, num_classes)
+        
+        # Update best accuracies
+        for i in range(num_classes):
+            if val_accs[i] > best_accs[i]:
+                best_accs[i] = val_accs[i]
+        
+        # Print progress occasionally
+        if e % 100 == 0 or e == opt.linear_eval_epochs or e == 1:
+            avg_train_acc = sum(train_accs) / len(train_accs)
+            avg_val_acc = sum(val_accs) / len(val_accs)
+            avg_best_acc = sum(best_accs) / len(best_accs)
+            print(f'Binary eval epoch {e}, avg_train_acc: {avg_train_acc:.2f}, avg_val_acc: {avg_val_acc:.2f}, avg_best_acc: {avg_best_acc:.2f}')
+    
+    # Log to tensorboard
+    for i in range(num_classes):
+        logger.log_value(f'binary_eval_acc_class_{i}', best_accs[i], epoch)
+    
+    # Log average accuracy
+    avg_acc = sum(best_accs) / len(best_accs)
+    logger.log_value('binary_eval_avg_acc', avg_acc, epoch)
+    print(f"=== Binary evaluation complete. Average accuracy: {avg_acc:.2f} ===")
+    
+    return best_accs
+
+
+def train_binary_joint(train_loader, model, classifier, criterion, optimizer, epoch, opt, num_classes):
+    """Joint training for all binary classifiers"""
+    model.eval()
+    classifier.train()
+
+    batch_time = AverageMeter()
+    data_time = AverageMeter()
+    losses = AverageMeter()
+    accs = [AverageMeter() for _ in range(num_classes)]
+
+    end = time.time()
+    for idx, (images, labels) in enumerate(train_loader):
+        data_time.update(time.time() - end)
+
+        images = images.cuda(non_blocking=True)
+        labels = labels.cuda(non_blocking=True)
+        bsz = labels.shape[0]
+
+        # Compute features once
+        with torch.no_grad():
+            features = model.encoder(images)
+        
+        # Forward pass through all binary classifiers at once
+        outputs = classifier(features.detach())  # [batch_size, num_classes]
+        
+        # Create binary labels for each class
+        # binary_labels = torch.zeros(bsz, num_classes, device=labels.device)
+        # for c in range(num_classes):
+        # binary_labels[:, :] = (labels[:, None] == torch.arange(num_classes, device=labels.device)).float()
+        binary_labels = (labels.unsqueeze(1) == torch.arange(num_classes, device=labels.device).unsqueeze(0)).float()
+            # binary_labels[:, c] = (labels == c).float()
+        factor = (8 if opt.dataset == 'cifar10' else 98) # weight positive samples 9 / 99 times more
+        weights = torch.ones_like(binary_labels) + factor * binary_labels 
+        # Compute loss for all classifiers
+        loss = F.binary_cross_entropy_with_logits(outputs, binary_labels,
+                                                  weights)
+        # loss = criterion(outputs, binary_labels)  # [batch_size, num_classes]
+        # loss = losses_per_sample.mean()  # Average over all samples and classes
+        
+        # Calculate accuracy for each classifier
+        predictions = (torch.sigmoid(outputs) > 0.5).float()
+        correct = (predictions == binary_labels).float().sum(dim=0)
+        accuracies = correct / bsz * 100
+        
+        # Update accuracy meters
+        for c in range(num_classes):
+            accs[c].update(accuracies[c].item(), bsz)
+
+        # Update loss metric
+        losses.update(loss.item(), bsz)
+
+        # SGD
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # Measure elapsed time
+        batch_time.update(time.time() - end)
+        end = time.time()
+
+    # Return average loss and accuracies for each class
+    return losses.avg, [acc.avg for acc in accs]
+
+
+def validate_binary_joint(val_loader, model, classifier, criterion, opt, num_classes):
+    """Joint validation for all binary classifiers"""
+    model.eval()
+    classifier.eval()
+
+    batch_time = AverageMeter()
+    losses = AverageMeter()
+    accs = [AverageMeter() for _ in range(num_classes)]
+
+    with torch.no_grad():
+        end = time.time()
+        for idx, (images, labels) in enumerate(val_loader):
+            images = images.float().cuda()
+            labels = labels.cuda()
+            bsz = labels.shape[0]
+
+            # Forward pass
+            features = model.encoder(images)
+            outputs = classifier(features)  # [batch_size, num_classes]
+            
+            # Create binary labels for each class - more efficient one-liner
+            binary_labels = (labels.unsqueeze(1) == torch.arange(num_classes, device=labels.device).unsqueeze(0)).float()
+            
+            # Compute loss
+            loss = criterion(outputs, binary_labels)
+            
+            # Calculate accuracy for each classifier
+            predictions = (torch.sigmoid(outputs) > 0.5).float()
+            correct = (predictions == binary_labels).float().sum(dim=0)
+            accuracies = correct / bsz * 100
+            
+            # Update accuracy meters
+            for c in range(num_classes):
+                accs[c].update(accuracies[c].item(), bsz)
+
+            # Update loss metric
+            losses.update(loss.item(), bsz)
+
+            # Measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+    # Return average loss and accuracies for each class
+    return losses.avg, [acc.avg for acc in accs]
+
 
 def main():
     opt, linear_opt = parse_option()
@@ -460,6 +667,11 @@ def main():
     if start_epoch == 0:
         save_file = get_model_file(opt, 0) 
         save_model(model, optimizer, opt, 0, save_file)
+
+    if opt.linear_eval and start_epoch == 0:
+        linear_acc = linear_eval(model, opt, linear_opt, logger, start_epoch, 
+                                         log_individual_n_classes=opt.binary_num_classes)
+        print(f'Linear evaluation accuracy before training: {linear_acc:.2f}')
 
     # training routine
     for epoch in range(1, opt.epochs + 1):
@@ -483,10 +695,19 @@ def main():
         logger.log_value('train_on_neg_only', int(opt.train_on_neg_only), epoch + start_epoch)
 
         # perform linear evaluation if specified
-        if opt.linear_eval and (epoch % opt.save_freq == 0  or epoch == opt.epochs):
-            linear_acc = linear_eval(model, opt, linear_opt,logger, epoch + start_epoch)
-            print(f'Linear evaluation accuracy at epoch {epoch + start_epoch}: {linear_acc:.2f}')
+        if (epoch % opt.save_freq == 0  or epoch == opt.epochs):
 
+            # perform binary evaluation if specified - commented out since extremely slow
+            # if opt.binary_eval:
+            #     binary_accs = binary_eval(model, opt, linear_opt, logger, epoch + start_epoch, num_classes=opt.binary_num_classes)
+            #     avg_acc = sum(binary_accs) / len(binary_accs)
+            #     print(f'Binary evaluation average accuracy at epoch {epoch + start_epoch}: {avg_acc:.2f}')
+            if opt.linear_eval:
+                # perform linear evaluation
+                linear_acc = linear_eval(model, opt, linear_opt, logger, epoch + start_epoch, 
+                                         log_individual_n_classes=opt.binary_num_classes)
+                print(f'Linear evaluation accuracy at epoch {epoch + start_epoch}: {linear_acc:.2f}')
+        
         if epoch % opt.save_freq == 0:
             save_file = get_model_file(opt, epoch + start_epoch)
             # save_file = os.path.join(

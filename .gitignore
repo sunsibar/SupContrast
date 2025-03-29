@@ -1,5 +1,7 @@
 tmp*.py
 .idea/
+*.png
+embeddings
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

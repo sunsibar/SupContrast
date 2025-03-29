@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
-#SBATCH --array=0-3
+#SBATCH --array=0-7
 
 # Load configuration
 source slurm_scripts/config.sh
@@ -32,11 +32,11 @@ scontrol show job "$SLURM_JOB_ID"
 echo $PATH
 
 DATASETS=("cifar10" "cifar100" "cifar10" "cifar100" "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100"  "cifar10" "cifar100")
-# DATASET=${DATASETS[$SLURM_ARRAY_TASK_ID]}
+DATASET=${DATASETS[$SLURM_ARRAY_TASK_ID]}
 # MODELS=("resnet18" "resnet18" "resnet34" "resnet34" "resnet34" "resnet34")
 MODEL="resnet18" 
-DATASET="cifar100"
-EMB_DIMS=(128 64 32 16)
+# DATASET="cifar100"
+EMB_DIMS=(128 128 64 64 32 32 16 16)
 # EMB_DIMS=(128 128 128 128 64 64 32 32 16 16 8 8 4 4 3 3)
 
 echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID"

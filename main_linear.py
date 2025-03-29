@@ -152,7 +152,7 @@ def set_model(opt):
     return model, classifier, criterion
 
 
-def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
+def train(train_loader, model, classifier, criterion, optimizer, epoch, opt, log_individual_n_classes=0):
     """one epoch training"""
     model.eval()
     classifier.train()
@@ -161,6 +161,9 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
     data_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
+
+    if log_individual_n_classes > 0:
+        top1_per_class = [AverageMeter() for _ in range(log_individual_n_classes)]
 
     end = time.time()
     for idx, (images, labels) in enumerate(train_loader):
@@ -181,8 +184,13 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
 
         # update metric
         losses.update(loss.item(), bsz)
-        acc1, acc5 = accuracy(output, labels, topk=(1, 5))
+        (acc1, acc5), per_class_acc1 = accuracy(output, labels, topk=(1, 5),
+                                                  return_per_class_top_1=True)
         top1.update(acc1[0], bsz)
+
+        if log_individual_n_classes > 0:
+            for i in range(log_individual_n_classes):
+                top1_per_class[i].update(per_class_acc1[i], bsz)
 
         # SGD
         optimizer.zero_grad()
@@ -204,10 +212,10 @@ def train(train_loader, model, classifier, criterion, optimizer, epoch, opt):
                    data_time=data_time, loss=losses, top1=top1))
             sys.stdout.flush()
 
-    return losses.avg, top1.avg
+    return losses.avg, top1.avg, [top1_per_class[i].avg for i in range(log_individual_n_classes)]
 
 
-def validate(val_loader, model, classifier, criterion, opt):
+def validate(val_loader, model, classifier, criterion, opt, log_individual_n_classes=0):
     """validation"""
     model.eval()
     classifier.eval()
@@ -215,6 +223,9 @@ def validate(val_loader, model, classifier, criterion, opt):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
+
+    if log_individual_n_classes > 0:
+        top1_per_class = [AverageMeter() for _ in range(log_individual_n_classes)]
 
     with torch.no_grad():
         end = time.time()
@@ -229,8 +240,12 @@ def validate(val_loader, model, classifier, criterion, opt):
 
             # update metric
             losses.update(loss.item(), bsz)
-            acc1, acc5 = accuracy(output, labels, topk=(1, 5))
+            (acc1, acc5), per_class_acc1 = accuracy(output, labels, topk=(1, 5), return_per_class_top_1=True)
             top1.update(acc1[0], bsz)
+
+            if log_individual_n_classes > 0:
+                for i in range(log_individual_n_classes):
+                    top1_per_class[i].update(per_class_acc1[i], bsz)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -245,11 +260,13 @@ def validate(val_loader, model, classifier, criterion, opt):
                        loss=losses, top1=top1))
 
     print(' * Acc@1 {top1.avg:.3f}'.format(top1=top1))
-    return losses.avg, top1.avg
+    return losses.avg, top1.avg, [top1_per_class[i].avg for i in range(log_individual_n_classes)]
 
 
 def main():
     best_acc = 0
+    best_acc_per_class = [0] * 10
+    n_classes_to_log = 10
     opt = parse_option()
 
     # build data loader
@@ -267,16 +284,20 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        train_loss, train_acc = train(train_loader, model, classifier, criterion,
-                          optimizer, epoch, opt)
+        train_loss, train_acc, _ = train(train_loader, model, classifier, criterion,
+                          optimizer, epoch, opt, log_individual_n_classes=0)
         time2 = time.time()
         print('Train epoch {}, total time {:.2f}, accuracy:{:.2f}'.format(
             epoch, time2 - time1, train_acc))
 
         # eval for one epoch
-        val_loss, val_acc = validate(val_loader, model, classifier, criterion, opt)
+        val_loss, val_acc, val_acc_per_class = validate(val_loader, model, classifier, criterion, opt, 
+                                                        log_individual_n_classes=n_classes_to_log)
         if val_acc > best_acc:
             best_acc = val_acc
+        for i in range(n_classes_to_log):
+            if val_acc_per_class[i] > best_acc_per_class[i]:
+                best_acc_per_class[i] = val_acc_per_class[i]
             
         time2 = time.time()
         print('epoch {}, total time {:.2f}, train_acc:{:.2f}, val_acc:{:.2f}'.format(
