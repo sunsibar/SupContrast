@@ -15,7 +15,7 @@ import torch.backends.cudnn as cudnn
 from torchvision import transforms, datasets
 
 from util import TwoCropTransform, AverageMeter
-from util import adjust_learning_rate, warmup_learning_rate
+from util import adjust_learning_rate, warmup_learning_rate, weight_decay_schedule
 from util import set_optimizer, save_model
 from networks.resnet_big import SupConResNet, LinearClassifier
 from losses import SupConLoss
@@ -64,6 +64,8 @@ def parse_option():
                         help='weight decay')
     parser.add_argument('--momentum', type=float, default=0.9,
                         help='momentum')
+    parser.add_argument('--increase_weight_decay', action='store_true',
+                        help='increase weight decay by x10 after 50% of training')
     parser.add_argument('--train_on_neg_only', action='store_true',
                         help='train on negative only')
 
@@ -300,6 +302,8 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     data_time = AverageMeter()
     losses = AverageMeter()
 
+    weight_decay_schedule(opt, epoch, optimizer)
+
     end = time.time()
     for idx, (images, labels) in enumerate(train_loader):
         data_time.update(time.time() - end)
@@ -509,7 +513,7 @@ def binary_eval(model, opt, linear_opt, logger, epoch, num_classes=10):
         
         # Train for one epoch
         train_loss, train_accs = train_binary_joint(train_loader, model, classifier, criterion, optimizer, e, opt, num_classes)
-        scheduler.step(train_loss)
+        scheduler.step(train_loss) # wait, isn't this done by adjust_learning_rate?
 
         # Evaluate
         val_loss, val_accs = validate_binary_joint(val_loader, model, classifier, criterion, opt, num_classes)
@@ -692,6 +696,7 @@ def main():
         logger.log_value('train_loss', loss, epoch + start_epoch)
         logger.log_value('val_loss', val_loss, epoch + start_epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch + start_epoch)
+        logger.log_value('weight_decay', optimizer.param_groups[0]['weight_decay'], epoch + start_epoch)
         logger.log_value('train_on_neg_only', int(opt.train_on_neg_only), epoch + start_epoch)
 
         # perform linear evaluation if specified

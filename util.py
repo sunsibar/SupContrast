@@ -175,6 +175,10 @@ def warmup_learning_rate(args, epoch, batch_id, total_batches, optimizer):
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
+def weight_decay_schedule(args, epoch, optimizer):
+    if args.increase_weight_decay and epoch > args.epochs * 0.5:
+        for param_group in optimizer.param_groups:
+            param_group['weight_decay'] = args.weight_decay * 10
 
 def set_optimizer(opt, model):
     optimizer = optim.SGD(model.parameters(),
