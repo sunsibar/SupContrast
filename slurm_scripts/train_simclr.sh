@@ -9,7 +9,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --open-mode=append
 #SBATCH --signal=INT@600
-#SBATCH --array=0-5
+#SBATCH --array=0-6
 
 # Load configuration
 source slurm_scripts/config.sh
@@ -43,9 +43,10 @@ EMB_DIMS=(1024 1024 1024 1024 1024 1024)
 # LABEL_SMOOTHING_LIST=(0.0 0.0 0.2 0.2 0.4 0.4)
 # LABEL_SMOOTHING=${LABEL_SMOOTHING_LIST[$SLURM_ARRAY_TASK_ID]}
 LABEL_SMOOTHING=0.0
-CLIP_POS_LIST=(0.0 0.0 0.0 0.025 0.025 0.025)
-CLIP_NEG_LIST=(0.0 0.1 0.5 0.0 0.1 0.5)
-
+CLIP_POS_LIST=(0.0 0.0 0.0 0.025 0.05 0.1 0.5)
+CLIP_NEG_LIST=(0.0 0.1 0.5 0.0   0.0  0.0 0.0)
+CLIP_POS=${CLIP_POS_LIST[$SLURM_ARRAY_TASK_ID]}
+CLIP_NEG=${CLIP_NEG_LIST[$SLURM_ARRAY_TASK_ID]}
 
 echo "SLURM_ARRAY_TASK_ID: $SLURM_ARRAY_TASK_ID"
 
@@ -62,6 +63,7 @@ TRAIN_ON_NEG_ONLY=""
 # TRAIN_ON_NEG_ONLY=" --train_on_neg_only "
 # EPOCH_LIST=(2150 2250 2250 1950 850 2050)
 # EPOCH=${EPOCH_LIST[$SLURM_ARRAY_TASK_ID]}
+
 
 # TRIAL="emb-dim-${EMB_DIM}_with-linear-eval-ls-${LABEL_SMOOTHING}_cosine_warm"
 # CKPT="save/SupCon/${DATASET}_models/${MODEL_TYPE}_${DATASET}_${MODEL}_lr_${LR}_decay_0.0001_bsz_2048_temp_${TEMPERATURE}_ls_${LABEL_SMOOTHING}_trial_${TRIAL}/ckpt_epoch_${EPOCH}.pth" 
@@ -100,7 +102,8 @@ srun singularity exec -p --nv \
         $TRAIN_ON_NEG_ONLY \
         --linear_eval \
         --weight_decay 0.0001 \
-        --label_smoothing $LABEL_SMOOTHING 
+        --label_smoothing $LABEL_SMOOTHING \
+        --clip_pos $CLIP_POS --clip_neg $CLIP_NEG 
 
 
         # \
