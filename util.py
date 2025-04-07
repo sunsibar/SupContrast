@@ -197,6 +197,7 @@ def save_model(model, optimizer, opt, epoch, save_file):
         'epoch': epoch,
     }
     torch.save(state, save_file)
+    print(f'... Model saved to {save_file}')
     del state
 
 

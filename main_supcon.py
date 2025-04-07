@@ -92,6 +92,14 @@ def parse_option():
     parser.add_argument('--temp', type=float, default=0.07,
                         help='temperature for loss function')
 
+    # label smoothing
+    parser.add_argument('--label_smoothing', type=float, default=0.0,
+                        help='label smoothing factor (0.0 to disable)')
+    parser.add_argument('--clip_pos', type=float, default=0.0,
+                        help='upper-bound clipping factor for positive similarities in the loss (0.0 to disable)')
+    parser.add_argument('--clip_neg', type=float, default=0.0,
+                        help='lower-bound clipping factor for negative similarities in the loss (0.0 to disable) - pass the desired distance to the max dissimilarity of 1')
+
     # other setting
     parser.add_argument('--cosine', action='store_true',
                         help='using cosine annealing')
@@ -135,7 +143,7 @@ def parse_option():
     # set the path according to the environment
     if opt.data_folder is None:
         opt.data_folder = './datasets/'
-    opt.model_path = './save/SupCon/{}_models'.format(opt.dataset)
+    opt.model_path = f'./save/{opt.method}/{opt.dataset}_models' 
     # opt.tb_path = './save/SupCon/{}_tensorboard'.format(opt.dataset)
     opt.tb_path = f'./save/{opt.method}/{opt.dataset}_tensorboard'
 
@@ -144,9 +152,9 @@ def parse_option():
     for it in iterations:
         opt.lr_decay_epochs.append(int(it))
 
-    opt.model_name = '{}_{}_{}_lr_{}_decay_{}_bsz_{}_temp_{}_trial_{}'.\
+    opt.model_name = '{}_{}_{}_lr_{}_decay_{}_bsz_{}_temp_{}_ls_{}_trial_{}'.\
         format(opt.method, opt.dataset, opt.model, opt.learning_rate,
-               opt.weight_decay, opt.batch_size, opt.temp, opt.trial)
+               opt.weight_decay, opt.batch_size, opt.temp, opt.label_smoothing, opt.trial)
 
     if opt.cosine:
         opt.model_name = '{}_cosine'.format(opt.model_name)
@@ -266,7 +274,9 @@ def set_model(opt):
     else:
         norm = nn.BatchNorm2d
     model = SupConResNet(name=opt.model, norm=norm, feat_dim=opt.emb_dim, head=opt.proj_head)
-    criterion = SupConLoss(temperature=opt.temp, neg_only=opt.train_on_neg_only)
+    criterion = SupConLoss(temperature=opt.temp, neg_only=opt.train_on_neg_only,
+                            label_smoothing=opt.label_smoothing,
+                            clip_pos=opt.clip_pos, clip_neg=opt.clip_neg)
 
     # enable synchronized Batch Normalization
     if opt.syncBN:
@@ -301,6 +311,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+    losses_no_label_smoothing = AverageMeter()
 
     weight_decay_schedule(opt, epoch, optimizer)
 
@@ -323,15 +334,20 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
         if opt.method == 'SupCon':
             loss = criterion(features, labels)
+            with torch.no_grad():
+                loss_no_label_smoothing = criterion(features, labels, use_label_smoothing=False)
         elif opt.method == 'SimCLR':
             loss = criterion(features)
+            with torch.no_grad():
+                loss_no_label_smoothing = criterion(features, use_label_smoothing=False)
         else:
             raise ValueError('contrastive method not supported: {}'.
                              format(opt.method))
 
         # update metric
         losses.update(loss.item(), bsz)
-
+        with torch.no_grad():
+            losses_no_label_smoothing.update(loss_no_label_smoothing.item(), bsz)
         # SGD
         optimizer.zero_grad()
         loss.backward()
@@ -351,7 +367,7 @@ def train(train_loader, model, criterion, optimizer, epoch, opt):
                    data_time=data_time, loss=losses))
             sys.stdout.flush()
 
-    return losses.avg
+    return losses.avg, losses_no_label_smoothing.avg
 
 
 def validate(val_loader, model, criterion, opt):
@@ -360,6 +376,7 @@ def validate(val_loader, model, criterion, opt):
 
     batch_time = AverageMeter()
     losses = AverageMeter()
+    losses_no_label_smoothing = AverageMeter()
 
     with torch.no_grad():
         end = time.time()
@@ -376,15 +393,17 @@ def validate(val_loader, model, criterion, opt):
             features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
             if opt.method in ['SupCon', 'TargetVector']:
                 loss = criterion(features, labels)
+                loss_no_label_smoothing = criterion(features, labels, use_label_smoothing=False)
             elif opt.method == 'SimCLR':
                 loss = criterion(features)
+                loss_no_label_smoothing = criterion(features, use_label_smoothing=False)
             else:
                 raise ValueError('contrastive method not supported: {}'.
                                  format(opt.method))
 
             # update metric
             losses.update(loss.item(), bsz)
-
+            losses_no_label_smoothing.update(loss_no_label_smoothing.item(), bsz)
             if idx % opt.print_freq == 0:
                 print('Test: [{0}/{1}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
@@ -392,7 +411,7 @@ def validate(val_loader, model, criterion, opt):
                        idx, len(val_loader), batch_time=batch_time,
                        loss=losses))
 
-    return losses.avg
+    return losses.avg, losses_no_label_smoothing.avg
 
 
 def set_linear_classifier(opt, linear_opt):
@@ -667,6 +686,7 @@ def main():
 
     # tensorboard
     logger = tb_logger.Logger(logdir=opt.tb_folder, flush_secs=2)
+    print(f'TensorBoard logger logging to: {opt.tb_folder}')
 
     if start_epoch == 0:
         save_file = get_model_file(opt, 0) 
@@ -683,18 +703,20 @@ def main():
 
         # train for one epoch
         time1 = time.time()
-        loss = train(train_loader, model, criterion, optimizer, epoch + start_epoch, opt)
+        loss, loss_no_ls = train(train_loader, model, criterion, optimizer, epoch + start_epoch, opt)
         
         # eval for one epoch
-        val_loss = validate(val_loader, model, criterion, opt)
+        val_loss, val_loss_no_ls = validate(val_loader, model, criterion, opt)
         
         time2 = time.time()
-        print('epoch {}, total time {:.2f}, train_loss: {:.3f}, val_loss: {:.3f}'.format(
-            epoch + start_epoch, time2 - time1, loss, val_loss))
+        print('epoch {}, total time {:.2f}, train_loss: {:.3f}, val_loss: {:.3f}, val_loss_no_ls: {:.3f}'.format(
+            epoch + start_epoch, time2 - time1, loss, val_loss, val_loss_no_ls))
 
         # tensorboard logger
         logger.log_value('train_loss', loss, epoch + start_epoch)
+        logger.log_value('train_loss_no_label_smoothing', loss_no_ls, epoch + start_epoch)
         logger.log_value('val_loss', val_loss, epoch + start_epoch)
+        logger.log_value('val_loss_no_label_smoothing', val_loss_no_ls, epoch + start_epoch)
         logger.log_value('learning_rate', optimizer.param_groups[0]['lr'], epoch + start_epoch)
         logger.log_value('weight_decay', optimizer.param_groups[0]['weight_decay'], epoch + start_epoch)
         logger.log_value('train_on_neg_only', int(opt.train_on_neg_only), epoch + start_epoch)

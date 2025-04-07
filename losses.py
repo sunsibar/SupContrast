@@ -16,16 +16,41 @@ class SupConLoss(nn.Module):
     :param neg_only: Train on the denominator of contrastive loss only. 
                      The values of the loss will be the same, but we detach the positive part.
                      For a pretraining stage.
+    :param label_smoothing: Amount of label smoothing to apply (0.0 to disable)
+    :param clip_pos: Amount of clipping to apply to the positives (0.0 to disable; between 0 and < 2; we will clip to below (1-clip_pos))
+    :param clip_neg: Amount of clipping to apply to the negatives (0.0 to disable; between 0 and < 2; we will clip to above -(1-clip_neg))
     """
     def __init__(self, temperature=0.07, contrast_mode='all',
-                 base_temperature=0.07, neg_only=False):
+                 base_temperature=0.07, neg_only=False, label_smoothing=0.0, 
+                 clip_pos=0.0, clip_neg=0.0):
         super(SupConLoss, self).__init__()
         self.temperature = temperature
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
         self.neg_only = neg_only
+        self.label_smoothing = label_smoothing
 
-    def forward(self, features, labels=None, mask=None):
+        if self.neg_only:
+            assert clip_pos == 0.0, 'clip_pos must be 0.0 when neg_only is True (not implemented otherwise)'
+            assert clip_neg == 0.0, 'clip_neg must be 0.0 when neg_only is True (not implemented otherwise)'
+            self.clip_pos = None
+            self.clip_neg = None
+        else:
+            assert clip_pos < 2., 'clip_pos must be less than 2.0, use "neg_only" to disable pos alltogether instead'
+            assert clip_neg < 2., 'clip_neg must be less than 2.0 (we will clip to above -(1-clip_neg), so you pass the distance to the max dissimilarity)'
+            assert clip_pos >= 0, 'clip_pos must be greater than or equal to 0.0'
+            assert clip_neg >= 0, 'clip_neg must be greater than or equal to 0.0 (we will clip to above -(1-clip_neg), so you pass the distance to the max dissimilarity)'
+            if clip_pos > 0:
+                self.clip_pos = (1 - clip_pos)/self.temperature
+            else:
+                self.clip_pos = None
+            if clip_neg > 0:
+                self.clip_neg = (1 - clip_neg)/self.temperature
+            else:
+                self.clip_neg = None
+    
+
+    def forward(self, features, labels=None, mask=None, use_label_smoothing=True):
         """Compute loss for model. If both `labels` and `mask` are None,
         it degenerates to SimCLR unsupervised loss:
         https://arxiv.org/pdf/2002.05709.pdf
@@ -57,13 +82,16 @@ class SupConLoss(nn.Module):
             labels = labels.contiguous().view(-1, 1)
             if labels.shape[0] != batch_size:
                 raise ValueError('Num of labels does not match num of features')
+            
             mask = torch.eq(labels, labels.T).float().to(device)
         else:
             mask = mask.float().to(device)
 
         contrast_count = features.shape[1]
+        # "flatten" the view dimension, by first splitting into 2 (n_views) tensors along dim=1
+        #  and then concatenating them along dim=0, so that all second views come after all first views
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0)
-        if self.contrast_mode == 'one':
+        if self.contrast_mode == 'one': 
             anchor_feature = features[:, 0]
             anchor_count = 1
         elif self.contrast_mode == 'all':
@@ -71,21 +99,23 @@ class SupConLoss(nn.Module):
             anchor_count = contrast_count
         else:
             raise ValueError('Unknown mode: {}'.format(self.contrast_mode))
-
-        # if self.stop_grad:
-        #     anchor_feature = anchor_feature.detach()
+        
+        if self.label_smoothing > 0 and use_label_smoothing:
+            # We have contrast_count * batch_size - 1 views we compare to, but also contrast_count positive views so ... 
+            # Okay this doesn't make maybe so much sense in the case of supcon. Not using that anyways for now.
+            # So again: For simclr, we have contrast_count * batch_size - 1 views we compare to.  
+            # But only one positive view per anchor. So let's down-weight the negative views furter by contrast_count.
+            mask = mask * (1 - self.label_smoothing) + (1 - mask) * (self.label_smoothing / (contrast_count * (batch_size - 1)))
     
         # compute logits
         anchor_dot_contrast = torch.div(
             torch.matmul(anchor_feature, contrast_feature.T),
-            self.temperature)
-        # for numerical stability
+            self.temperature) 
         logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
-        logits = anchor_dot_contrast - logits_max.detach()
 
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
-        # mask-out self-contrast cases
+        # mask-out self-contrast cases (but if I'm not wrong this keeps the different views of the same sample in the denominator)
         logits_mask = torch.scatter(
             torch.ones_like(mask),
             1,
@@ -93,13 +123,44 @@ class SupConLoss(nn.Module):
             0
         )
         mask = mask * logits_mask
+ 
 
-        # compute log_prob
-        exp_logits = torch.exp(logits) * logits_mask
         if self.neg_only:
+
+            # for numerical stability
+            logits = anchor_dot_contrast - logits_max.detach()
+
+            # compute log_prob
+            exp_logits = torch.exp(logits) * logits_mask
+
             log_prob = logits.detach() - torch.log(exp_logits.sum(1, keepdim=True))
+
         else:
-            log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
+            # Optional clipping 
+            if self.clip_pos is not None:
+                # Clipping the positives on the upper end might reduce overfitting: https://arxiv.org/pdf/2407.15863 
+                logits_pos = torch.clamp(anchor_dot_contrast,  max=self.clip_pos)
+                # assert min >= -1/self.temperature
+                logits_max = torch.clamp(logits_max, max=self.clip_pos)
+            else:
+                logits_pos = anchor_dot_contrast
+
+            if self.clip_neg is not None:
+                # Clip the logits similar to whats recommended here: https://arxiv.org/pdf/1910.06222 
+                # But we don't clip on the upper end since this would allow collapse
+                anchor_dot_contrast = torch.clamp(anchor_dot_contrast, min = -self.clip_neg)
+                # logits_max = torch.max(logits_max, self.clip_neg) 
+             
+
+            # for numerical stability
+            # logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
+            logits_pos = logits_pos - logits_max.detach()
+            anchor_dot_contrast = anchor_dot_contrast - logits_max.detach()
+
+            # compute log_prob
+            exp_logits = torch.exp(anchor_dot_contrast) * logits_mask
+
+            log_prob = logits_pos - torch.log(exp_logits.sum(1, keepdim=True))
 
         # compute mean of log-likelihood over positive
         # modified to handle edge cases when there is no positive pair
@@ -110,6 +171,10 @@ class SupConLoss(nn.Module):
         # loss before mean:  [nan, ..., ..., nan] 
         mask_pos_pairs = mask.sum(1)
         mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, 1, mask_pos_pairs)
+        
+        # Mask implements a weighted sum; originally, we summed over masked log_prob terms where only one element per row was not masked out. 
+        # Now with label smoothing, we can either take a masked sum just the same way, weighting the (equal) denominator term as well so that 
+        # it sums to once itself as well. Let's do that.  
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask_pos_pairs
 
         # loss
