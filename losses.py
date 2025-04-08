@@ -19,20 +19,30 @@ class SupConLoss(nn.Module):
     :param label_smoothing: Amount of label smoothing to apply (0.0 to disable)
     :param clip_pos: Amount of clipping to apply to the positives (0.0 to disable; between 0 and < 2; we will clip to below (1-clip_pos))
     :param clip_neg: Amount of clipping to apply to the negatives (0.0 to disable; between 0 and < 2; we will clip to above -(1-clip_neg))
+    :param clip_neg_top_k: Only include the top k negatives in the denominator of the loss (per sample). Set to -1 to deactivate.
     """
     def __init__(self, temperature=0.07, contrast_mode='all',
                  base_temperature=0.07, neg_only=False, label_smoothing=0.0, 
-                 clip_pos=0.0, clip_neg=0.0):
+                 clip_pos=0.0, clip_neg=0.0, clip_neg_top_k=-1):
         super(SupConLoss, self).__init__()
         self.temperature = temperature
         self.contrast_mode = contrast_mode
         self.base_temperature = base_temperature
         self.neg_only = neg_only
         self.label_smoothing = label_smoothing
+        self.clip_neg_top_k = clip_neg_top_k
+        if clip_neg_top_k != -1:
+            if clip_neg_top_k < 1:
+                raise ValueError('clip_neg_top_k must be greater than 1, since one negative will be the positive pair which is likely the largest. (or -1 to deactivate)')
+            if clip_neg > 0 :
+                raise ValueError('clip_neg_top_k must be -1 when clip_neg is set  > 0 (keep it simple)')
+            if label_smoothing > 0:
+                raise ValueError('label_smoothing must be 0 when clip_neg_top_k is set (havent implemented their interaction)')
 
         if self.neg_only:
             assert clip_pos == 0.0, 'clip_pos must be 0.0 when neg_only is True (not implemented otherwise)'
             assert clip_neg == 0.0, 'clip_neg must be 0.0 when neg_only is True (not implemented otherwise)'
+            assert clip_neg_top_k == -1, 'clip_neg_top_k must be -1 when neg_only is True (not implemented otherwise)'
             self.clip_pos = None
             self.clip_neg = None
         else:
@@ -122,8 +132,7 @@ class SupConLoss(nn.Module):
             torch.arange(batch_size * anchor_count).view(-1, 1).to(device),
             0
         )
-        mask = mask * logits_mask
- 
+        mask = mask * logits_mask 
 
         if self.neg_only:
 
@@ -150,7 +159,6 @@ class SupConLoss(nn.Module):
                 # But we don't clip on the upper end since this would allow collapse
                 anchor_dot_contrast = torch.clamp(anchor_dot_contrast, min = -self.clip_neg)
                 # logits_max = torch.max(logits_max, self.clip_neg) 
-             
 
             # for numerical stability
             # logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True)
@@ -159,6 +167,10 @@ class SupConLoss(nn.Module):
 
             # compute log_prob
             exp_logits = torch.exp(anchor_dot_contrast) * logits_mask
+            if self.clip_neg_top_k > 1:
+                # sort the exp_logits and keep only the top k
+                exp_logits, _ = torch.sort(exp_logits, dim=1, descending=True)
+                exp_logits = exp_logits[:, :self.clip_neg_top_k] 
 
             log_prob = logits_pos - torch.log(exp_logits.sum(1, keepdim=True))
 

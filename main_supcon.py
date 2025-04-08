@@ -99,6 +99,8 @@ def parse_option():
                         help='upper-bound clipping factor for positive similarities in the loss (0.0 to disable)')
     parser.add_argument('--clip_neg', type=float, default=0.0,
                         help='lower-bound clipping factor for negative similarities in the loss (0.0 to disable) - pass the desired distance to the max dissimilarity of 1')
+    parser.add_argument('--clip_neg_top_k', type=int, default=-1,
+                        help='only include the top k negatives in the denominator of the loss (per sample). Set to -1 to deactivate. Otherwise must be at least 2.')
 
     # other setting
     parser.add_argument('--cosine', action='store_true',
