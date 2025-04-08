@@ -169,8 +169,9 @@ class SupConLoss(nn.Module):
             exp_logits = torch.exp(anchor_dot_contrast) * logits_mask
             if self.clip_neg_top_k > 1:
                 # sort the exp_logits and keep only the top k
-                exp_logits, _ = torch.sort(exp_logits, dim=1, descending=True)
-                exp_logits = exp_logits[:, :self.clip_neg_top_k] 
+                exp_logits, _ = torch.topk(exp_logits, k=self.clip_neg_top_k, dim=1, sorted=False)
+                # exp_logits, _ = torch.sort(exp_logits, dim=1, descending=True)
+                # exp_logits = exp_logits[:, :self.clip_neg_top_k] 
 
             log_prob = logits_pos - torch.log(exp_logits.sum(1, keepdim=True))
 
